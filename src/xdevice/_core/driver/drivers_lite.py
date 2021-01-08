@@ -739,11 +739,14 @@ class OpenSourceTestDriver(IDriver):
             parser_instance.listeners = listener
             parser_instances.append(parser_instance)
         self.handler = ShellHandler(parser_instances)
-        result, _, error = self.config.device.execute_command_with_timeout(
-            command=command, case_type=DeviceTestType.open_source_test,
-            timeout=timeout, receiver=self.handler)
-        self.config.command_result = "{}{}".format(
-            self.config.command_result, result)
+        for _ in range(3):
+            result, _, error = self.config.device.execute_command_with_timeout(
+                command=command, case_type=DeviceTestType.open_source_test,
+                timeout=timeout, receiver=self.handler)
+            self.config.command_result = "{}{}".format(
+                self.config.command_result, result)
+            if "test pass" in result.lower() or "tests pass" in result.lower():
+                break
         return error, result, self.handler
 
     def _do_test_run(self, command, request):
