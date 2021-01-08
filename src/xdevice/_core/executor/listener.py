@@ -119,10 +119,13 @@ class StateRecorder:
             self.current_suites.index = uuid.uuid4().hex
         return self.current_suites
 
-    def test(self, reset=False):
+    def test(self, reset=False, test_index=None):
         if reset or not self.current_test:
             self.current_test = CaseResult()
-            self.current_test.index = uuid.uuid4().hex
+            if test_index:
+                self.current_test.index = test_index
+            else:
+                self.current_test.index = uuid.uuid4().hex
         return self.current_test
 
 

@@ -53,6 +53,7 @@ _CTEST_SETUP_TAG = "setup"
 _CTEST_RUN_TAG = "-----------------------"
 
 _TEST_PASSED_LOWER = "test pass"
+_TESTS_PASSED_LOWER = "tests pass"
 
 _COMPILE_PASSED = "compile PASSED"
 _COMPILE_PARA = r"(.* compile .*)"
@@ -745,7 +746,8 @@ class OpenSourceParser(IParser):
             self.state_machine.trace_logs.extend(self.lines)
         self.handle_suite_started_tag(self.test_num)
 
-        test_result = self.state_machine.test(reset=True)
+        test_result = self.state_machine.test(reset=True,
+                                              test_index=self.test_name)
         test_result.run_time = 0
         test_result.test_class = self.suite_name
         test_result.test_name = self.test_name
@@ -756,7 +758,8 @@ class OpenSourceParser(IParser):
             listener.__started__(LifeCycle.TestCase, result)
         for line in self.lines:
             self.output = "{}{}".format(self.output, line)
-            if _TEST_PASSED_LOWER in line.lower():
+            if _TEST_PASSED_LOWER in line.lower() or \
+                    _TESTS_PASSED_LOWER in line.lower():
                 test_result.code = ResultCode.PASSED.value
                 for listener in self.get_listeners():
                     result = copy.copy(test_result)
