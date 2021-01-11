@@ -42,10 +42,7 @@ LOG = platform_logger("DmlibLite")
 
 
 def check_read_test_end(result=None, input_command=None):
-    if input_command not in result:
-        return False
-    index = result.find(input_command) + len(input_command)
-    result_output = result[index:]
+    result_output = result.replace(input_command, "")
     if input_command.startswith("./"):
         if result_output.find(CPP_TEST_STANDARD_SIGN) != -1:
             if result_output.count(CPP_TEST_STANDARD_SIGN) == 2 or \
