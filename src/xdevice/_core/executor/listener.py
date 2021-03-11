@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -21,11 +21,12 @@ import uuid
 from dataclasses import dataclass
 
 from _core.plugin import Plugin
+from _core.plugin import get_plugin
 from _core.constants import ListenerType
+from _core.constants import TestType
 from _core.interface import LifeCycle
 from _core.interface import IListener
 from _core.logger import platform_logger
-from _core.report.result_reporter import ResultReporter
 from _core.report.suite_reporter import SuiteReporter
 from _core.report.suite_reporter import ResultCode
 from _core.report.encrypt import check_pub_key_exist
@@ -76,7 +77,7 @@ class SuitesResult:
     stacktrace = ""
     run_time = 0
     is_completed = False
-    product_params = {}
+    product_info = {}
 
 
 @dataclass
@@ -245,6 +246,10 @@ class ReportListener(IListener):
         else:
             return self.tests.get(self.current_test_id)
 
+    def _remove_current_test_result(self):
+        if self.current_test_id in self.tests:
+            del self.tests[self.current_test_id]
+
     def __started__(self, lifecycle, test_result):
         if lifecycle == LifeCycle.TestSuites:
             suites = self._get_suite_result(test_result=test_result,
@@ -300,10 +305,10 @@ class ReportListener(IListener):
                 result_dir = os.path.join(self.report_path, "result")
                 os.makedirs(result_dir, exist_ok=True)
                 suites_name = kwargs.get("suites_name", "")
-                product_params = kwargs.get("product_params", "")
+                product_info = kwargs.get("product_info", "")
                 suite_report = SuiteReporter(self.result, suites_name,
                                              result_dir,
-                                             product_params=product_params)
+                                             product_info=product_info)
                 suite_report.generate_data_report()
         elif lifecycle == LifeCycle.TestCase:
             test = self._get_test_result(test_result=test_result, create=False)
@@ -311,18 +316,21 @@ class ReportListener(IListener):
             test.stacktrace = test_result.stacktrace
             test.code = test_result.code
         elif lifecycle == LifeCycle.TestTask:
-            result_report = ResultReporter(report_path=self.report_path,
-                                           task_info=test_result)
-            result_report.generate_reports()
+            test_type = str(kwargs.get("test_type", TestType.all))
+            reporter = get_plugin(plugin_type=Plugin.REPORTER,
+                                  plugin_id=test_type)
+            if not reporter:
+                reporter = get_plugin(plugin_type=Plugin.REPORTER,
+                                      plugin_id=TestType.all)[0]
+            else:
+                reporter = reporter[0]
+            reporter.__generate_reports__(self.report_path,
+                                          task_info=test_result)
 
     def __skipped__(self, lifecycle, test_result):
-        if lifecycle == LifeCycle.TestSuite:
-            suite = self._get_suite_result(test_result=test_result,
-                                           create=False)
-            suite.code = ResultCode.SKIPPED.value
-        elif lifecycle == LifeCycle.TestCase:
-            test = self._get_test_result(test_result=test_result, create=False)
-            test.code = ResultCode.SKIPPED.value
+        del test_result
+        if lifecycle == LifeCycle.TestCase:
+            self._remove_current_test_result()
 
     def __failed__(self, lifecycle, test_result):
         if lifecycle == LifeCycle.TestSuite:

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -16,6 +16,7 @@
 # limitations under the License.
 #
 
+import copy
 import os
 import shutil
 import threading
@@ -23,10 +24,23 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
 
+from _core.constants import ModeType
+from _core.constants import ConfigConst
 from _core.executor.request import Request
 from _core.logger import platform_logger
 from _core.plugin import Config
 from _core.utils import get_instance_name
+from _core.utils import get_filename_extension
+from _core.utils import check_mode
+from _core.exception import ParamError
+from _core.exception import ExecuteTerminate
+from _core.exception import DeviceError
+from _core.exception import LiteDeviceError
+from _core.report.reporter_helper import VisionHelper
+from _core.report.reporter_helper import ReportConstant
+from _core.report.reporter_helper import DataHelper
+from _core.report.reporter_helper import Suite
+from _core.report.reporter_helper import Case
 
 LOG = platform_logger("Concurrent")
 
@@ -73,6 +87,9 @@ class DriversThread(threading.Thread):
 
     def set_listeners(self, listeners):
         self.listeners = listeners
+        if self.environment is None:
+            return
+
         for listener in listeners:
             listener.device_sn = self.environment.devices[0].device_sn
 
@@ -82,6 +99,7 @@ class DriversThread(threading.Thread):
     def run(self):
         from xdevice import Scheduler
         LOG.debug("thread id: %s start" % self.thread_id)
+        start_time = time.time()
         execute_message = ExecuteMessage('', self.environment,
                                          self.test_driver, self.thread_id)
         driver, test = None, None
@@ -98,135 +116,165 @@ class DriversThread(threading.Thread):
                 self._do_task_setup(driver_request)
 
                 # driver execute
-                driver.__check_config__(driver_request.config)
+                self.reset_device(driver_request.config)
                 driver.__execute__(driver_request)
 
         except Exception as exception:
-            LOG.exception(
-                "device: %s, exception: %s" % (
-                    self.environment.__get_serial__(), exception.args))
+            error_no = getattr(exception, "error_no", "00000")
+            if self.environment is None:
+                LOG.exception("exception: %s", exception, exc_info=False,
+                              error_no=error_no)
+            else:
+                LOG.exception(
+                    "device: %s, exception: %s" % (
+                        self.environment.__get_serial__(), exception),
+                    exc_info=False, error_no=error_no)
             self.error_message = "{}: {}".format(
-                get_instance_name(exception), str(exception.args))
+                get_instance_name(exception), str(exception))
 
         finally:
-            if driver and test:
-                execute_result = driver.__result__()
-                if getattr(self.task.config, "history_report_path", ""):
-                    execute_result = self._inherit_execute_result(
-                        execute_result, test)
-                execute_message.set_result(execute_result)
+            self._handle_finally(driver, execute_message, start_time, test)
 
-            if self.error_message:
-                execute_message.set_state(ExecuteMessage.DEVICE_ERROR)
-            else:
-                execute_message.set_state(ExecuteMessage.DEVICE_FINISH)
-            LOG.debug("put thread %s result", self.thread_id)
-            self.message_queue.put(execute_message)
+    @staticmethod
+    def reset_device(config):
+        if getattr(config, "reboot_per_module", False):
+            for device in config.environment.devices:
+                device.reboot()
 
+    def _handle_finally(self, driver, execute_message, start_time, test):
+        from xdevice import Scheduler
+        # output execute time
+        end_time = time.time()
+        execute_time = VisionHelper.get_execute_time(int(
+            end_time - start_time))
+        source_content = self.test_driver[1].source.source_file or \
+                         self.test_driver[1].source.source_string
+        LOG.info("Executed: %s, Execution Time: %s" % (
+            source_content, execute_time))
+
+        # inherit history report under retry mode
+        if driver and test:
+            execute_result = driver.__result__()
+            LOG.debug("execute_result:%s" % execute_result)
+            if getattr(self.task.config, "history_report_path", ""):
+                execute_result = self._inherit_execute_result(
+                    execute_result, test)
+            execute_message.set_result(execute_result)
+
+        # set execute state
+        if self.error_message:
+            execute_message.set_state(ExecuteMessage.DEVICE_ERROR)
+        else:
+            execute_message.set_state(ExecuteMessage.DEVICE_FINISH)
+
+        # free environment
+        if self.environment:
             LOG.debug("thread %s free environment",
                       execute_message.get_thread_id())
-            Scheduler.__free_environment__(
-                execute_message.get_environment())
-            LOG.info("")
+            Scheduler.__free_environment__(execute_message.get_environment())
+
+        LOG.debug("put thread %s result", self.thread_id)
+        self.message_queue.put(execute_message)
+        LOG.info("")
 
     def _do_task_setup(self, driver_request):
+        if check_mode(ModeType.decc) or getattr(
+                driver_request.config, ConfigConst.check_device, False):
+            return
+
+        if self.environment is None:
+            return
+
         from xdevice import Scheduler
         for device in self.environment.devices:
-            if getattr(device, "need_kit_setup", True):
-                for kit in self.task.config.kits:
-                    if not Scheduler.is_execute:
-                        break
-                    kit.__setup__(device, request=driver_request)
-                setattr(device, "need_kit_setup", False)
+            if not getattr(device, ConfigConst.need_kit_setup, True):
+                LOG.debug("device %s need kit setup is false" % device)
+                continue
 
-        if getattr(driver_request, "product_params", "") and not getattr(
-                self.task, "product_params", ""):
-            product_params = getattr(driver_request, "product_params")
-            if not isinstance(product_params, dict):
-                LOG.warning("product params should be dict, %s",
-                            product_params)
+            # do task setup for device
+            kits_copy = copy.deepcopy(self.task.config.kits)
+            setattr(device, ConfigConst.task_kits, kits_copy)
+            for kit in getattr(device, ConfigConst.task_kits, []):
+                if not Scheduler.is_execute:
+                    break
+                try:
+                    kit.__setup__(device, request=driver_request)
+                except (ParamError, ExecuteTerminate, DeviceError,
+                        LiteDeviceError, ValueError, TypeError,
+                        SyntaxError, AttributeError) as exception:
+                    error_no = getattr(exception, "error_no", "00000")
+                    LOG.exception(
+                        "task setup device: %s, exception: %s" % (
+                            self.environment.__get_serial__(),
+                            exception), exc_info=False, error_no=error_no)
+            LOG.debug("set device %s need kit setup to false" % device)
+            setattr(device, ConfigConst.need_kit_setup, False)
+
+        # set product_info to self.task
+        if getattr(driver_request, ConfigConst.product_info, "") and not \
+                getattr(self.task, ConfigConst.product_info, ""):
+            product_info = getattr(driver_request, ConfigConst.product_info)
+            if not isinstance(product_info, dict):
+                LOG.warning("product info should be dict, %s",
+                            product_info)
                 return
-            setattr(self.task, "product_params", product_params)
+            setattr(self.task, ConfigConst.product_info, product_info)
 
     def _get_driver_request(self, root_desc, execute_message):
         config = Config()
-        config.update(self.task.config.__dict__)
+        config.update(copy.deepcopy(self.task.config).__dict__)
         config.environment = self.environment
         if getattr(config, "history_report_path", ""):
             # modify config.testargs
             history_report_path = getattr(config, "history_report_path", "")
+            module_name = root_desc.source.module_name
             unpassed_test_params = self._get_unpassed_test_params(
-                history_report_path, root_desc)
+                history_report_path, module_name)
             if not unpassed_test_params:
                 LOG.info("%s all test cases are passed, no need retry",
-                         root_desc.source.test_name)
+                         module_name)
                 driver_request = Request(self.thread_id, root_desc,
                                          self.listeners, config)
                 execute_message.set_request(driver_request)
                 return None
-            test_args = getattr(config, "testargs", {})
-            test_params = []
-            for unpassed_test_param in unpassed_test_params:
-                if unpassed_test_param not in test_params:
-                    test_params.append(unpassed_test_param)
-            test_args["test"] = test_params
-            if "class" in test_args.keys():
-                test_args.pop("class")
-            setattr(config, "testargs", test_args)
+            if unpassed_test_params[0] != module_name and \
+                    unpassed_test_params[0] != str(module_name).split(".")[0]:
+                test_args = getattr(config, "testargs", {})
+                test_params = []
+                for unpassed_test_param in unpassed_test_params:
+                    if unpassed_test_param not in test_params:
+                        test_params.append(unpassed_test_param)
+                test_args["test"] = test_params
+                if "class" in test_args.keys():
+                    test_args.pop("class")
+                setattr(config, "testargs", test_args)
 
         for listener in self.listeners:
-            LOG.debug("thread id %s, listener %s" % (
-                self.thread_id, listener))
+            LOG.debug("thread id %s, listener %s" % (self.thread_id, listener))
         driver_request = Request(self.thread_id, root_desc, self.listeners,
                                  config)
         execute_message.set_request(driver_request)
         return driver_request
 
-    def _get_unpassed_test_params(self, history_report_path, root_desc):
-        from xdevice import Scheduler
-        if Scheduler.mode == "decc":
-            return self._get_decc_unpassed_params(root_desc)
-
+    @classmethod
+    def _get_unpassed_test_params(cls, history_report_path, module_name):
         unpassed_test_params = []
-        # get target_report_file
-        history_report_file = ""
-        report_file_suffix = "%s.xml" % root_desc.source.test_name
-        for root_dir, _, files in os.walk(history_report_path):
-            for report_file in files:
-                if report_file.endswith(report_file_suffix):
-                    history_report_file = os.path.abspath(
-                        os.path.join(root_dir, report_file))
-                    break
-        if not history_report_file:
+        from _core.report.result_reporter import ResultReporter
+        params = ResultReporter.get_task_info_params(history_report_path)
+        if not params:
             return unpassed_test_params
 
-        # append unpassed_test_param
-        self._append_unpassed_test_param(history_report_file,
-                                         unpassed_test_params)
+        failed_list = params[3].get(module_name, [])
+        if not failed_list:
+            failed_list = params[3].get(str(module_name).split(".")[0], [])
+        unpassed_test_params.extend(failed_list)
         LOG.debug("get unpassed test params %s", unpassed_test_params)
         return unpassed_test_params
 
     @classmethod
-    def _get_decc_unpassed_params(cls, root_desc):
-        from xdevice import SuiteReporter
-        from _core.report.reporter_helper import DataHelper
-        from _core.report.reporter_helper import ReportConstant
-
-        if not SuiteReporter.get_report_result():
-            LOG.warning("decc retry command no previous result")
-            return []
-        summary_result = SuiteReporter.get_report_result()[0][1]
-        summary_element = DataHelper.parse_data_report(summary_result)
-        for child in summary_element:
-            if child.get(ReportConstant.module) == root_desc.source.test_name:
-                return []
-        return [root_desc.source.test_name]
-
-    @classmethod
     def _append_unpassed_test_param(cls, history_report_file,
                                     unpassed_test_params):
-        from _core.report.reporter_helper import DataHelper
-        from _core.report.reporter_helper import Suite
+
         testsuites_element = DataHelper.parse_data_report(history_report_file)
         for testsuite_element in testsuites_element:
             suite_name = testsuite_element.get("name", "")
@@ -240,12 +288,8 @@ class DriversThread(threading.Thread):
                 unpassed_test_params.append(unpassed_test_param)
 
     def _inherit_execute_result(self, execute_result, root_desc):
-        from xdevice import Scheduler
-        if Scheduler.mode == "decc":
-            return
-
-        # get history execute result
-        execute_result_name = "%s.xml" % root_desc.source.test_name
+        module_name = root_desc.source.module_name
+        execute_result_name = "%s.xml" % module_name
         history_execute_result = self._get_history_execute_result(
             execute_result_name)
         if not history_execute_result:
@@ -253,30 +297,56 @@ class DriversThread(threading.Thread):
                         execute_result_name)
             return execute_result
 
-        if not os.path.exists(execute_result):
-            result_dir = os.path.join(self.task.config.report_path, "result")
-            os.makedirs(result_dir, exist_ok=True)
-            target_execute_result = os.path.join(result_dir,
-                                                 execute_result_name)
-            shutil.copyfile(history_execute_result, target_execute_result)
-            LOG.info("copy %s to %s" % (history_execute_result,
-                                        target_execute_result))
-            return target_execute_result
+        if not check_mode(ModeType.decc):
+            if not os.path.exists(execute_result):
+                result_dir = \
+                    os.path.join(self.task.config.report_path, "result")
+                os.makedirs(result_dir, exist_ok=True)
+                target_execute_result = os.path.join(result_dir,
+                                                     execute_result_name)
+                shutil.copyfile(history_execute_result, target_execute_result)
+                LOG.info("copy %s to %s" % (history_execute_result,
+                                            target_execute_result))
+                return target_execute_result
+
+        real_execute_result = self._get_real_execute_result(execute_result)
 
         # inherit history execute result
-        from _core.report.reporter_helper import DataHelper
-        LOG.info("inherit history execute result: %s", history_execute_result)
+        testsuites_element = DataHelper.parse_data_report(real_execute_result)
+        if self._is_empty_report(testsuites_element):
+            if check_mode(ModeType.decc):
+                LOG.info("empty report no need to inherit history execute"
+                         " result")
+            else:
+                LOG.info("empty report '%s' no need to inherit history execute"
+                         " result", history_execute_result)
+            return execute_result
+
+        real_history_execute_result = self._get_real_history_execute_result(
+            history_execute_result, module_name)
+
         history_testsuites_element = DataHelper.parse_data_report(
-            history_execute_result)
-        testsuites_element = DataHelper.parse_data_report(execute_result)
+            real_history_execute_result)
+        if self._is_empty_report(history_testsuites_element):
+            LOG.info("history report '%s' is empty", history_execute_result)
+            return execute_result
+        if check_mode(ModeType.decc):
+            LOG.info("inherit history execute result")
+        else:
+            LOG.info("inherit history execute result: %s",
+                     history_execute_result)
         self._inherit_element(history_testsuites_element, testsuites_element)
 
-        # generate inherit execute result
-        DataHelper.generate_report(testsuites_element, execute_result)
+        if check_mode(ModeType.decc):
+            from xdevice import SuiteReporter
+            SuiteReporter.append_report_result(
+                (execute_result, DataHelper.to_string(testsuites_element)))
+        else:
+            # generate inherit execute result
+            DataHelper.generate_report(testsuites_element, execute_result)
         return execute_result
 
     def _inherit_element(self, history_testsuites_element, testsuites_element):
-        from _core.report.reporter_helper import ReportConstant
         for history_testsuite_element in history_testsuites_element:
             history_testsuite_name = history_testsuite_element.get("name", "")
             target_testsuite_element = None
@@ -309,7 +379,12 @@ class DriversThread(threading.Thread):
             testsuites_element.set(ReportConstant.tests, str(inherited_test))
 
     def _get_history_execute_result(self, execute_result_name):
-        history_execute_result = ""
+        if execute_result_name.endswith(".xml"):
+            execute_result_name = execute_result_name[:-4]
+        history_execute_result = \
+            self._get_data_report_from_record(execute_result_name)
+        if history_execute_result:
+            return history_execute_result
         for root_dir, _, files in os.walk(
                 self.task.config.history_report_path):
             for result_file in files:
@@ -320,8 +395,6 @@ class DriversThread(threading.Thread):
 
     @classmethod
     def _check_testcase_pass(cls, history_testcase_element):
-        from _core.report.reporter_helper import ReportConstant
-        from _core.report.reporter_helper import Case
         case = Case()
         case.result = history_testcase_element.get(ReportConstant.result, "")
         case.status = history_testcase_element.get(ReportConstant.status, "")
@@ -333,6 +406,61 @@ class DriversThread(threading.Thread):
                 ReportConstant.message)
 
         return case.is_passed()
+
+    @classmethod
+    def _is_empty_report(cls, testsuites_element):
+        if len(testsuites_element) < 1:
+            return True
+        if len(testsuites_element) >= 2:
+            return False
+
+        if int(testsuites_element[0].get(ReportConstant.unavailable, 0)) > 0:
+            return True
+        return False
+
+    def _get_data_report_from_record(self, execute_result_name):
+        history_report_path = \
+            getattr(self.task.config, "history_report_path", "")
+        if history_report_path:
+            from _core.report.result_reporter import ResultReporter
+            params = ResultReporter.get_task_info_params(history_report_path)
+            if params:
+                report_data_dict = dict(params[4])
+                if execute_result_name in report_data_dict.keys():
+                    return report_data_dict.get(execute_result_name)
+                elif execute_result_name.split(".")[0] in \
+                        report_data_dict.keys():
+                    return report_data_dict.get(
+                        execute_result_name.split(".")[0])
+        return ""
+
+    @classmethod
+    def _get_real_execute_result(cls, execute_result):
+        from xdevice import SuiteReporter
+        LOG.debug("get_real_execute_result length is: %s" %
+                  len(SuiteReporter.get_report_result()))
+        if check_mode(ModeType.decc):
+            for suite_report, report_result in \
+                    SuiteReporter.get_report_result():
+                if os.path.splitext(suite_report)[0] == \
+                        os.path.splitext(execute_result)[0]:
+                    return report_result
+            return ""
+        else:
+            return execute_result
+
+    @classmethod
+    def _get_real_history_execute_result(cls, history_execute_result,
+                                         module_name):
+        from xdevice import SuiteReporter
+        LOG.debug("get_real_history_execute_result: %s" %
+                  SuiteReporter.history_report_result)
+        if check_mode(ModeType.decc):
+            virtual_report_path, report_result = SuiteReporter. \
+                get_history_result_by_module(module_name)
+            return report_result
+        else:
+            return history_execute_result
 
 
 class QueueMonitorThread(threading.Thread):

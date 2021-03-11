@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,7 +22,8 @@ __all__ = ["DeviceOsType", "ProductForm", "TestType", "TestExecType",
            "DeviceTestType", "HostTestType", "HostDrivenTestType",
            "SchedulerType", "ListenerType", "ToolCommandType",
            "TEST_DRIVER_SET", "LogType", "ParserType", "CKit", "ComType",
-           "DeviceLabelType", "DeviceLiteKernel", "GTestConst", "ManagerType"]
+           "DeviceLabelType", "DeviceLiteKernel", "GTestConst", "ManagerType",
+           "ModeType", "ConfigConst"]
 
 
 @dataclass
@@ -40,9 +41,10 @@ class ProductForm(object):
     ProductForm enumeration
     """
     phone = "phone"
-    car = "car"
+    car = "ivi"
     television = "tv"
     watch = "watch"
+    tablet = 'tablet'
 
 
 @dataclass
@@ -57,6 +59,7 @@ class TestType(object):
     sec = "security"
     reli = "reliability"
     dst = "distributedtest"
+    benchmark = "benchmark"
     all = "ALL"
 
 
@@ -76,8 +79,9 @@ class DeviceLabelType(object):
     """
     wifiiot = "wifiiot"
     ipcamera = "ipcamera"
-    watch = "watch"
+    watch_gt = "watchGT"
     phone = "phone"
+    watch = "watch"
 
 
 @dataclass
@@ -124,10 +128,12 @@ class DeviceTestType(object):
     hap_test = "HapTest"
     junit_test = "JUnitTest"
     jsunit_test = "JSUnitTest"
+    jsunit_test_lite = "JSUnitTestLite"
     ctest_lite = "CTestLite"
     cpp_test_lite = "CppTestLite"
     lite_cpp_test = "LiteUnitTest"
     open_source_test = "OpenSourceTest"
+    build_only_test = "BuildOnlyTestLite"
 
 
 @dataclass
@@ -190,6 +196,8 @@ class ParserType:
     cpp_test_lite = "CppTestLite"
     cpp_test_list_lite = "CppTestListLite"
     open_source_test = "OpenSourceTest"
+    build_only_test = "BuildOnlyTestLite"
+    jsuit_test_lite = "JSUnitTestLite"
 
 
 @dataclass
@@ -210,7 +218,7 @@ class ToolCommandType(object):
 @dataclass
 class CKit:
     push = "PushKit"
-    install = "ApkInstallKit"
+    liteinstall = "LiteAppInstallKit"
     command = "CommandKit"
     config = "ConfigKit"
     wifi = "WIFIKit"
@@ -222,9 +230,55 @@ class CKit:
     liteuikit = 'LiteUiKit'
     rootfs = "RootFsKit"
     query = "QueryKit"
+    liteshell = "LiteShellKit"
+    app_install = "AppInstallKit"
 
 
 @dataclass
 class GTestConst(object):
     exec_para_filter = "--gtest_filter"
     exec_para_level = "--gtest_testsize"
+
+
+@dataclass
+class ModeType(object):
+    decc = "decc"
+    factory = "factory"
+    developer = "developer"
+
+
+@dataclass
+class ConfigConst(object):
+    action = "action"
+    task = "task"
+    testlist = "testlist"
+    testfile = "testfile"
+    testcase = "testcase"
+    device_sn = "device_sn"
+    report_path = "report_path"
+    resource_path = "resource_path"
+    testcases_path = "testcases_path"
+    testargs = "testargs"
+    pass_through = "pass_through"
+    test_environment = "test_environment"
+    exectype = "exectype"
+    testtype = "testtype"
+    testdriver = "testdriver"
+    retry = "retry"
+    session = "session"
+    dry_run = "dry_run"
+    reboot_per_module = "reboot_per_module"
+    check_device = "check_device"
+    configfile = "config"
+    repeat = "repeat"
+
+    # Runtime Constant
+    history_report_path = "history_report_path"
+    product_info = "product_info"
+    task_state = "task_state"
+    recover_state = "recover_state"
+    need_kit_setup = "need_kit_setup"
+    task_kits = "task_kits"
+    module_kits = "module_kits"
+    spt = "spt"
+    version = "version"

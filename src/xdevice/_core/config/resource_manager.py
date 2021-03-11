@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -110,9 +110,7 @@ class ResourceManager(object):
                 src = os.path.join(resource_dir, push_value[0:pos].strip())
                 dst = push_value[pos + len(find_key):len(push_value)].strip()
 
-                LOG.info("create_dir: dst = %s" % (dst))
                 device.execute_shell_command("mkdir -p %s" % dst)
-                LOG.info("push_file: src = %s, dst = %s" % (src, dst))
                 device.push_file(src, dst)
             elif item["name"] == "pull":
                 push_value = item["value"]
@@ -122,16 +120,13 @@ class ResourceManager(object):
                 src = os.path.join(resource_dir, push_value[0:pos].strip())
                 dst = push_value[pos + len(find_key):len(push_value)].strip()
 
-                LOG.info("pull_file: src = %s, dst = %s" % (src, dst))
                 device.pull_file(src, dst)
             elif item["name"] == "shell":
                 command = item["value"].strip()
-                LOG.info("shell = %s", command)
                 device.execute_shell_command(command)
             else:
                 command = "".join((item["name"], " ", item["value"]))
                 command = command.strip()
-                LOG.info("others = %s", command)
                 device.execute_command(command)
 
     @staticmethod

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -24,6 +24,8 @@ from _core.interface import IListener
 from _core.interface import IScheduler
 from _core.interface import IDevice
 from _core.interface import ITestKit
+from _core.interface import IDeviceManager
+from _core.interface import IReporter
 
 __all__ = ["Config", "Plugin", "get_plugin", "set_plugin_params",
            "get_all_plugins", "clear_plugin_cache"]
@@ -53,6 +55,12 @@ class Config:
     def update(self, params):
         self.__dict__.update(params)
 
+    def get(self, key, default=""):
+        return self.__dict__.get(key, default)
+
+    def set(self, key, value):
+        self.__dict__[key] = value
+
 
 class Plugin(object):
     """
@@ -68,6 +76,7 @@ class Plugin(object):
     LISTENER = "listener"
     TEST_KIT = "testkit"
     MANAGER = "manager"
+    REPORTER = "reporter"
 
     _builtin_plugin = dict({
         SCHEDULER: [IScheduler],
@@ -75,7 +84,9 @@ class Plugin(object):
         DEVICE: [IDevice],
         PARSER: [IParser],
         LISTENER: [IListener],
-        TEST_KIT: [ITestKit]
+        TEST_KIT: [ITestKit],
+        MANAGER: [IDeviceManager],
+        REPORTER: [IReporter]
     })
 
     def __init__(self, *args, **kwargs):
@@ -129,8 +140,12 @@ class Plugin(object):
                     "{} plugin must implement {} interface.".format(
                         cls.__name__, interface))
 
-        _PLUGINS.setdefault((self.plugin_type, self.plugin_id), []).insert(
-            0, instance)
+        if "xdevice" in str(instance.__class__).lower():
+            _PLUGINS.setdefault((self.plugin_type, self.plugin_id), []).append(
+                instance)
+        else:
+            _PLUGINS.setdefault((self.plugin_type, self.plugin_id), []).insert(
+                0, instance)
 
         return cls
 
@@ -149,8 +164,20 @@ def get_plugin(plugin_type, plugin_id=None):
     :return:  the instance list of plugin
     """
     if plugin_id is None:
-        plugin_id = plugin_type
-    return _PLUGINS.get((plugin_type, plugin_id), [])
+        plugins = []
+        for key in _PLUGINS:
+            if key[0] != plugin_type:
+                continue
+            if not _PLUGINS.get(key):
+                continue
+            if key[1] == plugin_type:
+                plugins.insert(0, _PLUGINS.get(key)[0])
+            else:
+                plugins.append(_PLUGINS.get(key)[0])
+        return plugins
+
+    else:
+        return _PLUGINS.get((plugin_type, plugin_id), [])
 
 
 def set_plugin_params(plugin_type, plugin_id=None, **kwargs):

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,20 +19,24 @@
 import os
 import shutil
 import glob
+import time
+import stat
 
 from _core.config.config_manager import UserConfigManager
+from _core.constants import ConfigConst
 from _core.constants import DeviceTestType
 from _core.constants import GTestConst
 from _core.constants import DeviceLabelType
 from _core.constants import ComType
 from _core.constants import ParserType
+from _core.constants import CKit
+from _core.constants import DeviceLiteKernel
 from _core.driver.parser_lite import ShellHandler
 from _core.environment.dmlib_lite import generate_report
 from _core.exception import ExecuteTerminate
-from _core.exception import ShellCommandUnresponsiveException
-from _core.exception import DeviceError
+from _core.exception import LiteDeviceError
 from _core.exception import LiteDeviceExecuteCommandError
-from _core.exception import LiteDeviceReadOutputError
+from _core.exception import ParamError
 from _core.executor.listener import CollectingLiteGTestListener
 from _core.executor.listener import TestDescription
 from _core.interface import IDriver
@@ -49,6 +53,7 @@ from _core.utils import get_device_log_file
 from _core.utils import get_filename_extension
 from _core.utils import get_file_absolute_path
 from _core.utils import get_test_component_version
+from _core.report.suite_reporter import SuiteReporter
 
 __all__ = ["CppTestDriver", "CTestDriver", "init_remote_server"]
 LOG = platform_logger("DriversLite")
@@ -56,22 +61,24 @@ FAILED_RUN_TEST_ATTEMPTS = 2
 
 
 def get_nfs_server(request):
-    config_manager = UserConfigManager(env=request.config.test_environment)
+    config_manager = UserConfigManager(
+        config_file=request.get(ConfigConst.configfile, ""),
+        env=request.get(ConfigConst.test_environment, ""))
     remote_info = config_manager.get_user_config("testcases/server",
                                                  filter_name="NfsServer")
     if not remote_info:
         err_msg = "The name of remote nfs server does not match"
-        LOG.error(err_msg)
-        raise TypeError(err_msg)
+        LOG.error(err_msg, error_no="00403")
+        raise ParamError(err_msg, error_no="00403")
     return remote_info
 
 
 def init_remote_server(lite_instance, request=None):
-    config_manager = UserConfigManager(env=request.config.test_environment)
+    config_manager = UserConfigManager(
+        config_file=request.get(ConfigConst.configfile, ""),
+        env=request.get(ConfigConst.test_environment, ""))
     linux_dict = config_manager.get_user_config("testcases/server")
 
-    # linux ip and replace the ip in commands list on top, which is only
-    # the default ip
     if linux_dict:
         setattr(lite_instance, "linux_host", linux_dict.get("ip"))
         setattr(lite_instance, "linux_port", linux_dict.get("port"))
@@ -80,23 +87,7 @@ def init_remote_server(lite_instance, request=None):
     else:
         error_message = "nfs server does not exist, please " \
                         "check user_config.xml"
-        LOG.error(error_message)
-        raise DeviceError(error_message)
-
-
-def get_execute_command(bin_file, xml_output, device_directory=None):
-    if bin_file.startswith("/"):
-        bin_file = ".%s" % bin_file
-    else:
-        bin_file = "./%s" % bin_file
-
-    if xml_output:
-        report_path = "/%s/%s/" % ("reports", bin_file.split(".")[0])
-        command = "".join((bin_file, " ", "--gtest_output=xml:",
-                           device_directory, report_path))
-        return command, report_path, True
-    else:
-        return bin_file, "", False
+        raise ParamError(error_message, error_no="00108")
 
 
 def get_testcases(testcases_list):
@@ -105,7 +96,7 @@ def get_testcases(testcases_list):
         test_item = test.split("#")
         if len(test_item) == 1:
             cases_list.append(test)
-        elif len(test_item) == 3:
+        elif len(test_item) == 2:
             cases_list.append(test_item[-1])
     return cases_list
 
@@ -122,12 +113,10 @@ class CppTestDriver(IDriver):
     config = None
     result = ""
     error_message = ""
-    has_param = False
 
     def __init__(self):
         self.rerun = True
         self.file_name = ""
-        self.need_download = False
 
     def __check_environment__(self, device_options):
         if len(device_options) != 1 or \
@@ -139,23 +128,16 @@ class CppTestDriver(IDriver):
     def __check_config__(self, config=None):
         pass
 
-    def __init_nfs_server__(self, request=None):
-        return init_remote_server(self, request)
-
-    def is_download(self, testcases_dir):
-        from _core.utils import get_local_ip
-        if (str(get_local_ip()) == self.linux_host) and (
-                self.linux_directory == ("/data%s" % testcases_dir)):
-            return False
-        return True
-
     def __execute__(self, request):
         kits = []
+        device_log_file = get_device_log_file(
+            request.config.report_path,
+            request.get_devices()[0].__get_serial__())
         try:
             self.config = request.config
             self.init_cpp_config()
             self.config.device = request.config.environment.devices[0]
-            self.__init_nfs_server__(request=request)
+            init_remote_server(self, request=request)
             config_file = request.root.source.config_file
             json_config = JsonParser(config_file)
             self._get_driver_config(json_config)
@@ -168,23 +150,15 @@ class CppTestDriver(IDriver):
             from xdevice import Scheduler
             for kit in kits:
                 if not Scheduler.is_execute:
-                    raise ExecuteTerminate()
+                    raise ExecuteTerminate("ExecuteTerminate",
+                                           error_no="00300")
                 kit.__setup__(request.config.device, request=request)
 
-            execute_dir = "/".join(bin_file.split("/")[0:-1])
-            execute_bin = bin_file.split("/")[-1]
+            command = self._get_execute_command(bin_file)
 
-            self.config.device.execute_command_with_timeout(
-                command="cd {}".format(execute_dir), timeout=1)
-
-            command, report_path, self.has_param = get_execute_command(
-                execute_bin, self.config.xml_output, execute_dir)
-            self.config.device_xml_path = (self.linux_directory +
-                                           report_path).replace("//", "/")
             self.set_file_name(request, command)
-            self.need_download = self.is_download(
-                request.config.testcases_path)
-            if self.need_download and self.has_param:
+
+            if self.config.xml_output:
                 self.delete_device_xml(request, self.config.device_xml_path)
             if os.path.exists(self.result):
                 os.remove(self.result)
@@ -194,19 +168,42 @@ class CppTestDriver(IDriver):
                 self.dry_run(command, request.listeners)
             else:
                 self.run_cpp_test(command, request)
-                self.generate_device_xml(request, execute_bin)
-                device_log_file = get_device_log_file(
-                    request.config.report_path,
-                    request.config.device.__get_serial__())
-                with open(device_log_file, "a", encoding="UTF-8") as file_name:
-                    file_name.write(self.config.command_result)
+                self.generate_device_xml(request, self.execute_bin)
 
-        except (LiteDeviceExecuteCommandError, Exception) as exception:
-            LOG.exception(exception)
+        except (LiteDeviceError, Exception) as exception:
+            LOG.exception(exception, exc_info=False)
             self.error_message = exception
         finally:
+            device_log_file_open = os.open(device_log_file, os.O_WRONLY |
+                                           os.O_CREAT | os.O_APPEND, 0o755)
+            with os.fdopen(device_log_file_open, "a") as file_name:
+                file_name.write(self.config.command_result)
+                file_name.flush()
             LOG.info("-------------finally-----------------")
             self._after_command(kits, request)
+
+    def _get_execute_command(self, bin_file):
+        if self.config.device.get("device_kernel") == \
+                DeviceLiteKernel.linux_kernel:
+            execute_dir = "/storage" + "/".join(bin_file.split("/")[0:-1])
+        else:
+            execute_dir = "/".join(bin_file.split("/")[0:-1])
+        self.execute_bin = bin_file.split("/")[-1]
+
+        self.config.device.execute_command_with_timeout(
+            command="cd {}".format(execute_dir), timeout=1)
+
+        if self.execute_bin.startswith("/"):
+            command = ".%s" % self.execute_bin
+        else:
+            command = "./%s" % self.execute_bin
+
+        report_path = "/%s/%s/" % ("reports", self.execute_bin.split(".")[0])
+        self.config.device_xml_path = (self.linux_directory + report_path).\
+            replace("//", "/")
+        self.config.device_report_path = execute_dir + report_path
+
+        return command
 
     def _get_driver_config(self, json_config):
         xml_output = get_config_value('xml-output',
@@ -214,10 +211,10 @@ class CppTestDriver(IDriver):
 
         if isinstance(xml_output, bool):
             self.config.xml_output = xml_output
-        elif str(xml_output).lower() == "true":
-            self.config.xml_output = True
-        else:
+        elif str(xml_output).lower() == "false":
             self.config.xml_output = False
+        else:
+            self.config.xml_output = True
 
         rerun = get_config_value('rerun', json_config.get_driver(), False)
         if isinstance(rerun, bool):
@@ -227,14 +224,24 @@ class CppTestDriver(IDriver):
         else:
             self.rerun = True
 
+        timeout_config = get_config_value('timeout',
+                                              json_config.get_driver(), False)
+        if timeout_config:
+            self.config.timeout = int(timeout_config)
+        else:
+            self.config.timeout = 900
+
     def _after_command(self, kits, request):
-        self.config.device.execute_command_with_timeout(
-            command="cd /", timeout=1)
+        if self.config.device.get("device_kernel") == \
+                DeviceLiteKernel.linux_kernel:
+            self.config.device.execute_command_with_timeout(
+                command="cd /storage", timeout=1)
+        else:
+            self.config.device.execute_command_with_timeout(
+                command="cd /", timeout=1)
         for kit in kits:
             kit.__teardown__(request.config.device)
-        close_error = self.config.device.close()
-        self.error_message = close_error if close_error else \
-            "case results are abnormal"
+        self.config.device.close()
         self.delete_device_xml(request, self.linux_directory)
 
         report_name = "report" if request.root.source. \
@@ -246,43 +253,51 @@ class CppTestDriver(IDriver):
                 report_name)
 
     def generate_device_xml(self, request, execute_bin):
-        if self.has_param:
-            if self.need_download:
-                self.download_nfs_xml(request, self.config.device_xml_path)
-                xml_count = 0
-                for file_name in os.listdir(os.path.dirname(self.result)):
-                    if file_name.startswith(execute_bin):
-                        xml_count += 1
-                if xml_count > 1:
-                    self.merge_xml(execute_bin)
-                elif xml_count == 1:
-                    self.copy_result(execute_bin)
+        if self.config.xml_output:
+            self.download_nfs_xml(request, self.config.device_xml_path)
+            self.merge_xml(execute_bin)
 
-    def dry_run(self, command, listener=None):
-        parsers = get_plugin(Plugin.PARSER, ParserType.cpp_test_list_lite)
-        parser_instances = []
-        for parser in parsers:
-            parser_instance = parser.__class__()
-            parser_instance.suites_name = os.path.basename(self.result)
-            if listener:
-                parser_instance.listeners = listener
-            parser_instances.append(parser_instance)
-        handler = ShellHandler(parser_instances)
+    def dry_run(self, request, command, listener=None):
+        if self.config.xml_output:
+            collect_test_command = "%s --gtest_output=xml:%s " \
+                                   "--gtest_list_tests" % \
+                                   (command, self.config.device_report_path)
+            result, _, _ = self.config.device.execute_command_with_timeout(
+                command=collect_test_command,
+                case_type=DeviceTestType.cpp_test_lite,
+                timeout=15, receiver=None)
 
-        collect_test_command = "%s --gtest_list_tests" % command.split(" ")[0]
-        result, _, _ = self.config.device.execute_command_with_timeout(
-            command=collect_test_command,
-            case_type=DeviceTestType.cpp_test_lite,
-            timeout=5, receiver=handler)
-        self.config.command_result = "{}{}".format(
-            self.config.command_result, result)
-        from xdevice import SuiteReporter
-        if parser_instances[0].tests and len(parser_instances[0].tests) > 0:
-            SuiteReporter.set_suite_list([item.test_name for item in
-                                          parser_instances[0].tests])
+            tests = self.read_nfs_xml(request, self.config.device_xml_path)
+            self.delete_device_xml(request, self.config.device_xml_path)
+            return tests
+
         else:
-            SuiteReporter.set_suite_list([])
+            parsers = get_plugin(Plugin.PARSER, ParserType.cpp_test_list_lite)
+            parser_instances = []
+            for parser in parsers:
+                parser_instance = parser.__class__()
+                parser_instance.suites_name = os.path.basename(self.result)
+                if listener:
+                    parser_instance.listeners = listener
+                parser_instances.append(parser_instance)
+            handler = ShellHandler(parser_instances)
 
+            collect_test_command = "%s --gtest_list_tests" % command
+            result, _, _ = self.config.device.execute_command_with_timeout(
+                command=collect_test_command,
+                case_type=DeviceTestType.cpp_test_lite,
+                timeout=15, receiver=handler)
+            self.config.command_result = "{}{}".format(
+                self.config.command_result, result)
+            if parser_instances[0].tests and \
+                    len(parser_instances[0].tests) > 0:
+                SuiteReporter.set_suite_list([item.test_name for item in
+                                              parser_instances[0].tests])
+            else:
+                SuiteReporter.set_suite_list([])
+            tests = parser_instances[0].tests
+        if not tests:
+            LOG.error("collect test failed!", error_no="00402")
         return parser_instances[0].tests
 
     def run_cpp_test(self, command, request):
@@ -290,30 +305,34 @@ class CppTestDriver(IDriver):
             testcases_list = get_testcases(
                 request.config.testargs.get("test"))
             for test in testcases_list:
-                if not self.has_param:
-                    command = "{} {}=*{}".format(
-                        command, GTestConst.exec_para_filter, test)
+                command_case = "{} --gtest_filter=*{}".format(
+                    command, test)
 
-                    self.run(command,
-                             request.listeners,
-                             timeout=15)
+                if not self.config.xml_output:
+                    self.run(command_case, request.listeners, timeout=15)
                 else:
-                    self.run(command,
-                             None,
-                             timeout=15)
+                    command_case = "{} --gtest_output=xml:{}".format(
+                        command_case, self.config.device_report_path)
+                    self.run(command_case, None, timeout=15)
         else:
             self._do_test_run(command, request)
 
     def init_cpp_config(self):
         setattr(self.config, "command_result", "")
-        setattr(self.config, "xml_path", "")
         setattr(self.config, "device_xml_path", "")
         setattr(self.config, "dry_run", False)
 
     def merge_xml(self, execute_bin):
-        DataHelper.get_summary_result(os.path.join(
-            self.config.report_path, "result"), self.result,
-            key=sort_by_length)
+        report_path = os.path.join(self.config.report_path, "result")
+        summary_result = DataHelper.get_summary_result(
+            report_path, self.result, key=sort_by_length,
+            file_prefix=execute_bin)
+        if summary_result:
+            SuiteReporter.append_report_result((
+                os.path.join(report_path, "%s.xml" % execute_bin),
+                DataHelper.to_string(summary_result)))
+        else:
+            self.error_message = "The test case did not generate XML"
         for xml_file in os.listdir(os.path.split(self.result)[0]):
             if not xml_file.startswith(execute_bin):
                 continue
@@ -321,33 +340,14 @@ class CppTestDriver(IDriver):
                 os.remove(os.path.join(os.path.split(
                     self.result)[0], xml_file))
 
-    def copy_result(self, execute_bin):
-        path, _ = os.path.split(self.result)
-        for xml_file in os.listdir(path):
-            if not xml_file.startswith(execute_bin):
-                continue
-            device_file = open(os.path.join(path, xml_file), 'r')
-            if os.path.exists(self.result):
-                os.remove(self.result)
-            result_file = open(self.result, "w")
-            for line in device_file:
-                result_file.write(line)
-            device_file.close()
-            result_file.close()
-            os.remove(os.path.join(path, xml_file))
-
     def set_file_name(self, request, command):
-        if not self.has_param or not self.is_download(
-                request.config.testcases_path):
-            self.file_name = command.split(" ")[0].split("/")[-1].split(".")[0]
-        else:
-            self.file_name = command.split(" ")[0].split("/")[-1].split(".")[0]
-            self.config.xml_path = "{}/reports/{}.xml".format(
-                self.linux_directory, self.file_name).replace("//", "/")
+        self.file_name = command.split(" ")[0].split("/")[-1].split(".")[0]
         self.result = "%s.xml" % os.path.join(request.config.report_path,
                                               "result", self.file_name)
 
-    def run(self, command=None, listener=None, timeout=900):
+    def run(self, command=None, listener=None, timeout=None):
+        if not timeout:
+            timeout = self.config.timeout
         if listener:
             parsers = get_plugin(Plugin.PARSER, ParserType.cpp_test_lite)
             parser_instances = []
@@ -366,33 +366,30 @@ class CppTestDriver(IDriver):
         return error, result, handler
 
     def _do_test_run(self, command, request):
-        listeners = request.listeners
-        test_to_run = self._collect_test_to_run(command)
-        if self.has_param and self.need_download:
-            listeners = None
-        if not test_to_run:
-            error, _, _ = self.run(command, listeners, timeout=900)
-            if error:
-                raise LiteDeviceExecuteCommandError(
-                    "execute %s failed" % command)
-        else:
-            self._run_with_rerun(command, request, test_to_run)
+        test_to_run = self._collect_test_to_run(request, command)
+        self._run_with_rerun(command, request, test_to_run)
 
     def _run_with_rerun(self, command, request, expected_tests):
-        test_tracker = CollectingLiteGTestListener()
-
-        if self.has_param and self.need_download:
-            listener = []
+        if self.config.xml_output:
+            self.run("{} --gtest_output=xml:{}".format(
+                command, self.config.device_report_path))
+            time.sleep(5)
+            test_run = self.read_nfs_xml(request, self.config.device_xml_path)
+            if len(test_run) < len(expected_tests):
+                expected_tests = TestDescription.remove_test(expected_tests,
+                                                             test_run)
+                self._rerun_tests(command, expected_tests, None)
         else:
+            test_tracker = CollectingLiteGTestListener()
             listener = request.listeners
-        listener_copy = listener.copy()
-        listener_copy.append(test_tracker)
-        self.run(command, listener_copy, timeout=900)
-        test_run = test_tracker.get_current_run_results()
-        if len(test_run) != len(expected_tests):
-            expected_tests = TestDescription.remove_test(expected_tests,
-                                                         test_run)
-            self._rerun_tests(command, expected_tests, listener)
+            listener_copy = listener.copy()
+            listener_copy.append(test_tracker)
+            self.run(command, listener_copy)
+            test_run = test_tracker.get_current_run_results()
+            if len(test_run) != len(expected_tests):
+                expected_tests = TestDescription.remove_test(expected_tests,
+                                                             test_run)
+                self._rerun_tests(command, expected_tests, listener)
 
     def _rerun_tests(self, command, expected_tests, listener):
         if not expected_tests:
@@ -401,34 +398,39 @@ class CppTestDriver(IDriver):
             self._re_run(command, test, listener)
 
     def _re_run(self, command, test, listener):
-        handler = None
-        for _ in range(FAILED_RUN_TEST_ATTEMPTS):
-            try:
-                listener_copy = listener.copy()
-                test_tracker = CollectingLiteGTestListener()
-                listener_copy.append(test_tracker)
-                _, _, handler = self.run("{} {}=*{}".format(
-                       command, GTestConst.exec_para_filter, test.test_name),
-                    listener_copy, timeout=15)
-                if len(test_tracker.get_current_run_results()):
-                    return
-            except ShellCommandUnresponsiveException:
-                LOG.debug("Exception: ShellCommandUnresponsiveException")
-        handler.parsers[0].mark_test_as_failed(test)
+        if self.config.xml_output:
+            _, _, handler = self.run("{} {}=*{} --gtest_output=xml:{}".format(
+                command, GTestConst.exec_para_filter, test.test_name,
+                self.config.device_report_path),
+                listener, timeout=15)
+        else:
+            handler = None
+            for _ in range(FAILED_RUN_TEST_ATTEMPTS):
+                try:
+                    listener_copy = listener.copy()
+                    test_tracker = CollectingLiteGTestListener()
+                    listener_copy.append(test_tracker)
+                    _, _, handler = self.run("{} {}=*{}".format(
+                        command, GTestConst.exec_para_filter, test.test_name),
+                        listener_copy, timeout=15)
+                    if len(test_tracker.get_current_run_results()):
+                        return
+                except LiteDeviceError:
+                    LOG.debug("Exception: ShellCommandUnresponsiveException")
+            handler.parsers[0].mark_test_as_failed(test)
 
-    def _collect_test_to_run(self, command):
+    def _collect_test_to_run(self, request, command):
         if self.rerun:
-            collect_test_command = command.split(" ")[0]
-            tests = self.dry_run(collect_test_command)
+            tests = self.dry_run(request, command)
             return tests
-        return None
+        return []
 
     def download_nfs_xml(self, request, report_path):
         remote_nfs = get_nfs_server(request)
         if not remote_nfs:
             err_msg = "The name of remote device {} does not match". \
                 format(self.remote)
-            LOG.error(err_msg)
+            LOG.error(err_msg, error_no="00403")
             raise TypeError(err_msg)
         LOG.info("Trying to pull remote server: {}:{} report files to local "
                  "in dir {}".format
@@ -454,7 +456,7 @@ class CppTestDriver(IDriver):
                                      localpath=os.path.join(os.path.split(
                                          self.result)[0], report_xml))
                         except IOError as error:
-                            LOG.error(error)
+                            LOG.error(error, error_no="00404")
                 client.close()
             else:
                 if os.path.isdir(report_path):
@@ -465,14 +467,85 @@ class CppTestDriver(IDriver):
                                         os.path.join(os.path.split(
                                             self.result)[0], report_xml))
         except (FileNotFoundError, IOError) as error:
-            LOG.error("download xml failed %s" % error)
+            LOG.error("download xml failed %s" % error, error_no="00403")
+
+    def check_xml_exist(self, xml_file, timeout=60):
+        ls_command = "ls %s" % self.config.device_report_path
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            result, _, _ = self.config.device.execute_command_with_timeout(
+                command=ls_command, case_type=DeviceTestType.cpp_test_lite,
+                timeout=5, receiver=None)
+            if xml_file in result:
+                return True
+            time.sleep(5)
+        return False
+
+    def read_nfs_xml(self, request, report_path):
+        remote_nfs = get_nfs_server(request)
+        if not remote_nfs:
+            err_msg = "The name of remote device {} does not match". \
+                format(self.remote)
+            LOG.error(err_msg, error_no="00403")
+            raise TypeError(err_msg)
+        tests = []
+        file_path = os.path.join(report_path,
+                                 self.execute_bin + ".xml")
+        if not self.check_xml_exist(self.execute_bin + ".xml"):
+            return tests
+
+        from xml.etree import ElementTree
+        try:
+            if remote_nfs["remote"] == "true":
+                import paramiko
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client.connect(hostname=remote_nfs.get("ip"),
+                               port=int(remote_nfs.get("port")),
+                               username=remote_nfs.get("username"),
+                               password=remote_nfs.get("password"))
+                sftp_client = client.open_sftp()
+                remote_file = sftp_client.open(file_path)
+                try:
+                    result = remote_file.read().decode()
+                    suites_element = ElementTree.fromstring(result)
+                    for suite_element in suites_element:
+                        suite_name = suite_element.get("name", "")
+                        for case in suite_element:
+                            case_name = case.get("name")
+                            test = TestDescription(suite_name, case_name)
+                            if test not in tests:
+                                tests.append(test)
+                finally:
+                    remote_file.close()
+                client.close()
+            else:
+                if os.path.isdir(report_path):
+                    flags = os.O_RDONLY
+                    modes = stat.S_IWUSR | stat.S_IRUSR
+                    with os.fdopen(os.open(file_path, flags, modes),
+                                   "r") as test_file:
+                        result = test_file.read()
+                        suites_element = ElementTree.fromstring(result)
+                        for suite_element in suites_element:
+                            suite_name = suite_element.get("name", "")
+                            for case in suite_element:
+                                case_name = case.get("name")
+                                test = TestDescription(suite_name, case_name)
+                                if test not in tests:
+                                    tests.append(test)
+        except (FileNotFoundError, IOError) as error:
+            LOG.error("download xml failed %s" % error, error_no="00403")
+        except SyntaxError as error:
+            LOG.error("parse xml failed %s" % error, error_no="00404")
+        return tests
 
     def delete_device_xml(self, request, report_path):
         remote_nfs = get_nfs_server(request)
         if not remote_nfs:
             err_msg = "The name of remote device {} does not match". \
                 format(self.remote)
-            LOG.error(err_msg)
+            LOG.error(err_msg, error_no="00403")
             raise TypeError(err_msg)
         LOG.info("delete xml directory {} from remote server: {}"
                  "".format
@@ -492,6 +565,7 @@ class CppTestDriver(IDriver):
                         filepath = "{}{}".format(report_path, report_xml)
                         try:
                             sftp.remove(filepath)
+                            time.sleep(0.5)
                         except IOError:
                             pass
             except FileNotFoundError:
@@ -547,7 +621,8 @@ class CTestDriver(IDriver):
             self._run_ctest(source=source, request=request)
 
         except (LiteDeviceExecuteCommandError, Exception) as exception:
-            LOG.error(exception)
+            LOG.error(exception, error_no=getattr(exception, "error_no",
+                                                  "00000"))
             self.error_message = exception
         finally:
             report_name = "report" if request.root.source. \
@@ -560,54 +635,44 @@ class CTestDriver(IDriver):
     def _run_ctest(self, source=None, request=None):
         parser_instances = []
         parsers = get_plugin(Plugin.PARSER, ParserType.ctest_lite)
-        result = "Execute command error"
         try:
             if not source:
-                LOG.error("Error: source don't exist %s." % source)
+                LOG.error("Error: source don't exist %s." % source,
+                          error_no="00101")
                 return
-            if not self.config.device.local_device:
-                LOG.error(
-                    "CTest must have a local device, please check "
-                    "your config.")
-                return
+
+            version = get_test_component_version(self.config)
+
+            for parser in parsers:
+                parser_instance = parser.__class__()
+                parser_instance.suites_name = self.file_name
+                parser_instance.product_info.setdefault("Version", version)
+                parser_instance.listeners = request.listeners
+                parser_instances.append(parser_instance)
+            handler = ShellHandler(parser_instances)
 
             reset_cmd = self._reset_device(request, source)
             self.result = "%s.xml" % os.path.join(
                 request.config.report_path, "result", self.file_name)
-            self.config.device.local_device.com_dict.get(
+            self.config.device.device.com_dict.get(
                 ComType.deploy_com).connect()
-            result, _, error = self.config.device.local_device. \
+            result, _, error = self.config.device.device. \
                 execute_command_with_timeout(
                     command=reset_cmd, case_type=DeviceTestType.ctest_lite,
-                    key=ComType.deploy_com,
-                    timeout=90)
+                    key=ComType.deploy_com, timeout=90, receiver=handler)
             device_log_file = get_device_log_file(request.config.report_path,
                                                   request.config.device.
                                                   __get_serial__())
-            with open(device_log_file, "a", encoding="UTF-8") as file_name:
+            device_log_file_open = \
+                os.open(device_log_file, os.O_WRONLY | os.O_CREAT |
+                        os.O_APPEND, 0o755)
+            with os.fdopen(device_log_file_open, "a") as file_name:
                 file_name.write("{}{}".format(
                     "\n".join(result.split("\n")[0:-1]), "\n"))
-            if error:
-                raise LiteDeviceReadOutputError(error)
-        except (LiteDeviceExecuteCommandError, Exception) as exception:
-            LOG.error(exception)
-            self.error_message = exception
+                file_name.flush()
         finally:
-            close_error = self.config.device.local_device.com_dict.get(
+            self.config.device.device.com_dict.get(
                 ComType.deploy_com).close()
-            if close_error:
-                self.error_message = close_error
-
-        version = get_test_component_version(self.config)
-
-        for parser in parsers:
-            parser_instance = parser.__class__()
-            parser_instance.suites_name = self.file_name
-            parser_instance.product_params.setdefault("Version", version)
-            parser_instance.listeners = request.listeners
-            parser_instances.append(parser_instance)
-        handler = ShellHandler(parser_instances)
-        generate_report(handler, result)
 
     def _reset_device(self, request, source):
         json_config = JsonParser(source)
@@ -625,11 +690,10 @@ class CTestDriver(IDriver):
                     'burn_file', kit_info)[0].split("\\")[-1].split(".")[0]
             reset_cmd = kit_instance.burn_command
             if not Scheduler.is_execute:
-                raise ExecuteTerminate()
-            setup_result = kit_instance.__setup__(
-                self.config.device.local_device)
-            if not setup_result:
-                raise DeviceError("set_up wifiiot failed")
+                raise ExecuteTerminate("ExecuteTerminate",
+                                       error_no="00300")
+            kit_instance.__setup__(
+                self.config.device)
         reset_cmd = [int(item, 16) for item in reset_cmd]
         return reset_cmd
 
@@ -663,16 +727,13 @@ class OpenSourceTestDriver(IDriver):
     def __check_config__(self, config=None):
         pass
 
-    def __init_nfs_server__(self, request=None):
-        return init_remote_server(self, request)
-
     def __execute__(self, request):
         kits = []
         try:
             self.config = request.config
             setattr(self.config, "command_result", "")
             self.config.device = request.config.environment.devices[0]
-            self.__init_nfs_server__(request=request)
+            init_remote_server(self, request)
             config_file = request.root.source.config_file
             json_config = JsonParser(config_file)
             pre_cmd = get_config_value('pre_cmd', json_config.get_driver(),
@@ -685,38 +746,45 @@ class OpenSourceTestDriver(IDriver):
             from xdevice import Scheduler
             for kit in kits:
                 if not Scheduler.is_execute:
-                    raise ExecuteTerminate()
+                    raise ExecuteTerminate("ExecuteTerminate",
+                                           error_no="00300")
                 copy_list = kit.__setup__(request.config.device,
                                           request=request)
 
             self.file_name = request.root.source.test_name
             self.set_file_name(request, request.root.source.test_name)
             self.config.device.execute_command_with_timeout(
-                command=pre_cmd, timeout=0.5)
+                command=pre_cmd, timeout=1)
             self.config.device.execute_command_with_timeout(
                 command="cd {}".format(execute_dir), timeout=1)
-            for test_bin in copy_list:
-                if not test_bin.endswith(".run-test"):
-                    continue
-                command, _, _ = get_execute_command(test_bin, False)
-                self._do_test_run(command, request)
             device_log_file = get_device_log_file(
                 request.config.report_path,
                 request.config.device.__get_serial__())
-            with open(device_log_file, "a", encoding="UTF-8") as file_name:
-                file_name.write(self.config.command_result)
+            device_log_file_open = \
+                os.open(device_log_file, os.O_WRONLY | os.O_CREAT |
+                        os.O_APPEND, 0o755)
+            with os.fdopen(device_log_file_open, "a") as file_name:
+                for test_bin in copy_list:
+                    if not test_bin.endswith(".run-test"):
+                        continue
+                    if test_bin.startswith("/"):
+                        command = ".%s" % test_bin
+                    else:
+                        command = "./%s" % test_bin
+                    self._do_test_run(command, request)
+                    file_name.write(self.config.command_result)
+                file_name.flush()
 
         except (LiteDeviceExecuteCommandError, Exception) as exception:
-            LOG.error(exception)
+            LOG.error(exception, error_no=getattr(exception, "error_no",
+                                                  "00000"))
             self.error_message = exception
         finally:
             LOG.info("-------------finally-----------------")
             # umount the dirs already mount
             for kit in kits:
                 kit.__teardown__(request.config.device)
-            close_error = self.config.device.close()
-            self.error_message = close_error if close_error else\
-                "case results are abnormal"
+            self.config.device.close()
             report_name = "report" if request.root.source. \
                 test_name.startswith("{") else get_filename_extension(
                     request.root.source.test_name)[0]
@@ -743,9 +811,8 @@ class OpenSourceTestDriver(IDriver):
             result, _, error = self.config.device.execute_command_with_timeout(
                 command=command, case_type=DeviceTestType.open_source_test,
                 timeout=timeout, receiver=self.handler)
-            self.config.command_result = "{}{}".format(
-                self.config.command_result, result)
-            if "test pass" in result.lower() or "tests pass" in result.lower():
+            self.config.command_result = result
+            if "pass" in result.lower():
                 break
         return error, result, self.handler
 
@@ -753,10 +820,201 @@ class OpenSourceTestDriver(IDriver):
         listeners = request.listeners
         for listener in listeners:
             listener.device_sn = self.config.device.device_sn
-        error, _, _ = self.run(command, listeners, timeout=20)
+        error, _, _ = self.run(command, listeners, timeout=60)
         if error:
             LOG.error(
-                "execute %s failed" % command)
+                "execute %s failed" % command, error_no="00402")
+
+    def __result__(self):
+        return self.result if os.path.exists(self.result) else ""
+
+
+@Plugin(type=Plugin.DRIVER, id=DeviceTestType.build_only_test)
+class BuildOnlyTestDriver(IDriver):
+    """
+    BuildOnlyTest is a test that runs a native test package on given
+    device lite device.
+    """
+    config = None
+    result = ""
+    error_message = ""
+
+    def __check_environment__(self, device_options):
+        pass
+
+    def __check_config__(self, config):
+        pass
+
+    def __execute__(self, request):
+        self.config = request.config
+        self.config.device = request.config.environment.devices[0]
+        self.file_name = request.root.source.test_name
+        self.config_file = request.root.source.config_file
+        file_path = self._get_log_file()
+        result_list = self._get_result_list(file_path)
+        if len(result_list) == 0:
+            LOG.error(
+                "Error: source don't exist %s." % request.root.source.
+                source_file, error_no="00101")
+            return
+        total_result = ''
+        for result in result_list:
+            flags = os.O_RDONLY
+            modes = stat.S_IWUSR | stat.S_IRUSR
+            with os.fdopen(os.open(result, flags, modes), "r",
+                           encoding="utf-8") as file_content:
+                result = file_content.read()
+                if not result.endswith('\n'):
+                    result = '%s\n' % result
+            total_result = '{}{}'.format(total_result, result)
+        parsers = get_plugin(Plugin.PARSER, ParserType.build_only_test)
+        parser_instances = []
+        for parser in parsers:
+            parser_instance = parser.__class__()
+            parser_instance.suite_name = self.file_name
+            parser_instance.listeners = request.listeners
+            parser_instances.append(parser_instance)
+        handler = ShellHandler(parser_instances)
+        generate_report(handler, total_result)
+
+    @classmethod
+    def _get_result_list(cls, file_path):
+        result_list = list()
+        for root_path, _, file_names in os.walk(file_path):
+            for file_name in file_names:
+                if file_name == "logfile":
+                    result_list.append(os.path.join(root_path, file_name))
+        return result_list
+
+    def _get_log_file(self):
+        json_config = JsonParser(self.config_file)
+        log_path = get_config_value('log_path', json_config.get_driver(),
+                                    False)
+        file_path = get_file_absolute_path(log_path)
+        return file_path
+
+    def __result__(self):
+        return self.result if os.path.exists(self.result) else ""
+
+
+@Plugin(type=Plugin.DRIVER, id=DeviceTestType.jsunit_test_lite)
+class JSUnitTestLiteDriver(IDriver):
+    """
+    JSUnitTestDriver is a Test that runs a native test package on given device.
+    """
+
+    def __init__(self):
+        self.result = ""
+        self.error_message = ""
+        self.kits = []
+        self.config = None
+
+    def __check_environment__(self, device_options):
+        pass
+
+    def __check_config__(self, config):
+        pass
+
+    def _get_driver_config(self, json_config):
+        bundle_name = get_config_value('bundle-name',
+                                       json_config.get_driver(), False)
+        if not bundle_name:
+            raise ParamError("Can't find bundle-name in config file.",
+                             error_no="00108")
+        else:
+            self.config.bundle_name = bundle_name
+
+        ability = get_config_value('ability',
+                                   json_config.get_driver(), False)
+        if not ability:
+            self.config.ability = "default"
+        else:
+            self.config.ability = ability
+
+    def __execute__(self, request):
+        try:
+            LOG.debug("Start execute xdevice extension JSUnit Test")
+
+            self.config = request.config
+            self.config.device = request.config.environment.devices[0]
+
+            config_file = request.root.source.config_file
+            suite_file = request.root.source.source_file
+
+            if not suite_file:
+                raise ParamError(
+                    "test source '%s' not exists" %
+                    request.root.source.source_string, error_no="00101")
+
+            if not os.path.exists(config_file):
+                LOG.error("Error: Test cases don't exist %s." % config_file,
+                          error_no="00101")
+                raise ParamError(
+                    "Error: Test cases don't exist %s." % config_file,
+                    error_no="00101")
+
+            self.file_name = os.path.basename(
+                request.root.source.source_file.strip()).split(".")[0]
+
+            self.result = "%s.xml" % os.path.join(
+                request.config.report_path, "result", self.file_name)
+
+            json_config = JsonParser(config_file)
+            self.kits = get_kit_instances(json_config,
+                                          self.config.resource_path,
+                                          self.config.testcases_path)
+
+            self._get_driver_config(json_config)
+            from xdevice import Scheduler
+            for kit in self.kits:
+                if not Scheduler.is_execute:
+                    raise ExecuteTerminate("ExecuteTerminate",
+                                           error_no="00300")
+                if kit.__class__.__name__ == CKit.liteinstall:
+                    kit.bundle_name = self.config.bundle_name
+                kit.__setup__(self.config.device, request=request)
+
+            self._run_jsunit(request)
+
+        except Exception as exception:
+            self.error_message = exception
+        finally:
+            report_name = "report" if request.root.source. \
+                test_name.startswith("{") else get_filename_extension(
+                request.root.source.test_name)[0]
+
+            self.result = check_result_report(
+                request.config.report_path, self.result, self.error_message,
+                report_name)
+
+            for kit in self.kits:
+                kit.__teardown__(self.config.device)
+            self.config.device.close()
+
+    def _run_jsunit(self, request):
+        parser_instances = []
+        parsers = get_plugin(Plugin.PARSER, ParserType.jsuit_test_lite)
+        for parser in parsers:
+            parser_instance = parser.__class__()
+            parser_instance.suites_name = self.file_name
+            parser_instance.listeners = request.listeners
+            parser_instances.append(parser_instance)
+        handler = ShellHandler(parser_instances)
+
+        command = "./bin/aa start -p %s -n %s" % \
+                  (self.config.bundle_name, self.config.ability)
+        result, _, error = self.config.device.execute_command_with_timeout(
+            command=command, timeout=300, receiver=handler)
+        device_log_file = get_device_log_file(request.config.report_path,
+                                              request.config.device.
+                                              __get_serial__())
+        device_log_file_open =\
+            os.open(device_log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                    0o755)
+        with os.fdopen(device_log_file_open, "a") as file_name:
+            file_name.write("{}{}".format(
+                "\n".join(result.split("\n")[0:-1]), "\n"))
+            file_name.flush()
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""

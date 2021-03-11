@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,6 +20,7 @@ import os
 from collections import namedtuple
 
 from _core.constants import DeviceTestType
+from _core.constants import ModeType
 from _core.constants import HostDrivenTestType
 from _core.exception import ParamError
 from _core.logger import platform_logger
@@ -27,33 +28,38 @@ from _core.utils import get_filename_extension
 from _core.utils import is_config_str
 from _core.utils import unique_id
 
+from xdevice_adapter.constants import AppConst
+
 __all__ = ["TestSetSource", "TestSource", "find_test_descriptors",
            "find_testdict_descriptors"]
 
 TestSetSource = namedtuple('TestSetSource', 'set')
 TestSource = namedtuple('TestSource', 'source_file source_string config_file '
-                                      'test_name test_type')
+                                      'test_name test_type module_name')
 
 TEST_TYPE_DICT = {"DEX": DeviceTestType.dex_test,
                   "HAP": DeviceTestType.hap_test,
-                  "APK": DeviceTestType.hap_test,
+                  AppConst.app_name: DeviceTestType.hap_test,
                   "PYT": HostDrivenTestType.device_test,
                   "JST": DeviceTestType.jsunit_test,
                   "CXX": DeviceTestType.cpp_test,
                   "BIN": DeviceTestType.lite_cpp_test}
 EXT_TYPE_DICT = {".dex": DeviceTestType.dex_test,
                  ".hap": DeviceTestType.hap_test,
-                 ".apk": DeviceTestType.hap_test,
+                 AppConst.app_ext: DeviceTestType.hap_test,
                  ".py": HostDrivenTestType.device_test,
                  ".js": DeviceTestType.jsunit_test,
                  ".bin": DeviceTestType.lite_cpp_test,
                  "default": DeviceTestType.cpp_test}
+PY_SUFFIX = ".py"
+PYD_SUFFIX = ".pyd"
 MODULE_CONFIG_SUFFIX = ".json"
 LOG = platform_logger("TestSource")
 
 
 def find_test_descriptors(config):
-    if config.testfile == "" and config.testlist == "" and config.task == "":
+    if not config.testfile and not config.testlist and not config.task and \
+            not config.testcase:
         return None
 
     # get test sources
@@ -62,7 +68,8 @@ def find_test_descriptors(config):
     LOG.debug("test sources: %s", test_sources)
 
     # normalize test sources
-    test_sources = _normalize_test_sources(testcases_dirs, test_sources)
+    test_sources = _normalize_test_sources(testcases_dirs, test_sources,
+                                           config)
 
     # make test descriptors
     test_descriptors = _make_test_descriptors_from_testsources(test_sources,
@@ -119,7 +126,7 @@ def find_testdict_descriptors(config):
                 if desc is not None:
                     test_descriptors.append(desc)
     if not test_descriptors:
-        raise ParamError("test source is none")
+        raise ParamError("test source is none", error_no="00110")
     return test_descriptors
 
 
@@ -127,7 +134,8 @@ def _get_test_sources(config, testcases_dirs):
     test_sources = []
 
     # get test sources from testcases_dirs
-    if not config.testfile and not config.testlist and config.task:
+    if not config.testfile and not config.testlist and not config.testcase \
+            and config.task:
         for testcases_dir in testcases_dirs:
             _append_module_test_source(testcases_dir, test_sources)
         return test_sources
@@ -140,11 +148,22 @@ def _get_test_sources(config, testcases_dirs):
         return test_sources
 
     # get test sources from config.testfile
-    test_file = _get_test_file(config, testcases_dirs)
-    with open(test_file, "r") as file_content:
-        for line in file_content:
-            if line.strip():
-                test_sources.append(line.strip())
+    if getattr(config, "testfile", ""):
+        test_file = _get_test_file(config, testcases_dirs)
+        import stat
+        flags = os.O_RDONLY
+        modes = stat.S_IWUSR | stat.S_IRUSR
+        with os.fdopen(os.open(test_file, flags, modes), "r") as file_content:
+            for line in file_content:
+                if line.strip():
+                    test_sources.append(line.strip())
+
+    # get test sources from config.testcase
+    if getattr(config, "testcase", ""):
+        for test_source in config.testcase.split(";"):
+            if test_source.strip():
+                test_sources.append(test_source.strip())
+        return test_sources
     return test_sources
 
 
@@ -163,7 +182,8 @@ def _get_test_file(config, testcases_dirs):
         if os.path.exists(config.testfile):
             return config.testfile
         else:
-            raise ParamError("test file '%s' not exists" % config.testfile)
+            raise ParamError("test file '%s' not exists" % config.testfile,
+                             error_no="00110")
 
     for testcases_dir in testcases_dirs:
         test_file = os.path.join(testcases_dir, config.testfile)
@@ -173,16 +193,18 @@ def _get_test_file(config, testcases_dirs):
     raise ParamError("test file '%s' not exists" % config.testfile)
 
 
-def _normalize_test_sources(testcases_dirs, test_sources):
+def _normalize_test_sources(testcases_dirs, test_sources, config):
     norm_test_sources = []
     for test_source in test_sources:
         append_result = False
         for testcases_dir in testcases_dirs:
+            # append test source absolute path
             append_result = _append_norm_test_source(
-                norm_test_sources, test_source, testcases_dir)
+                norm_test_sources, test_source, testcases_dir, config)
             if append_result:
                 break
 
+        # append test source if no corresponding file founded
         if not append_result:
             norm_test_sources.append(test_source)
     if not norm_test_sources:
@@ -190,18 +212,33 @@ def _normalize_test_sources(testcases_dirs, test_sources):
     return norm_test_sources
 
 
-def _append_norm_test_source(norm_test_sources, test_source, testcases_dir):
+def _append_norm_test_source(norm_test_sources, test_source, testcases_dir,
+                             config):
     # get norm_test_source
     norm_test_source = test_source
     if not os.path.isabs(test_source):
         norm_test_source = os.path.abspath(
             os.path.join(testcases_dir, test_source))
+
+    # find py or pyd for test case input
+    if config.testcase and not config.testlist:
+        if os.path.isfile("%s%s" % (norm_test_source, PY_SUFFIX)):
+            norm_test_sources.append(
+                "%s%s" % (norm_test_source, PY_SUFFIX))
+            return True
+        elif os.path.isfile("%s%s" % (norm_test_source, PYD_SUFFIX)):
+            norm_test_sources.append(
+                "%s%s" % (norm_test_source, PYD_SUFFIX))
+            return True
+        return False
+
     # append to norm_test_sources
     if os.path.isfile(norm_test_source):
         norm_test_sources.append(norm_test_source)
         return True
-    elif os.path.isfile(norm_test_source + MODULE_CONFIG_SUFFIX):
-        norm_test_sources.append(norm_test_source + MODULE_CONFIG_SUFFIX)
+    elif os.path.isfile("%s%s" % (norm_test_source, MODULE_CONFIG_SUFFIX)):
+        norm_test_sources.append("%s%s" % (norm_test_source,
+                                           MODULE_CONFIG_SUFFIX))
         return True
     return False
 
@@ -218,10 +255,11 @@ def _make_test_descriptor(file_path, test_type_key):
     config_file = _get_config_file(
         os.path.join(os.path.dirname(file_path), filename))
 
+    module_name = _parse_module_name(config_file, filename)
     # make test descriptor
     desc = Descriptor(uuid=uid, name=filename,
                       source=TestSource(file_path, "", config_file, filename,
-                                        test_type))
+                                        test_type, module_name))
     return desc
 
 
@@ -231,7 +269,7 @@ def _get_test_driver(test_source):
         json_config = JsonParser(test_source)
         return json_config.get_driver_type()
     except ParamError as error:
-        LOG.error(error)
+        LOG.error(error, error_no=error.error_no)
         return ""
 
 
@@ -249,43 +287,89 @@ def _make_test_descriptors_from_testsources(test_sources, config):
 
         # get params
         config_file = _get_config_file(
-            os.path.join(os.path.dirname(test_source), filename))
+            os.path.join(os.path.dirname(test_source), filename), ext, config)
         test_type = _get_test_type(config_file, test_driver, ext)
-        if not test_type:
-            LOG.error("no driver to execute '%s'" % test_source)
-            continue
 
         desc = _create_descriptor(config_file, filename, test_source,
-                                  test_type)
-        test_descriptors.append(desc)
+                                  test_type, config)
+        if desc:
+            test_descriptors.append(desc)
 
     return test_descriptors
 
 
-def _create_descriptor(config_file, filename, test_source, test_type):
+def _create_descriptor(config_file, filename, test_source, test_type, config):
+    from xdevice import Scheduler
     from _core.executor.request import Descriptor
 
-    uid = unique_id("TestSource", filename)
+    error_message = ""
+    if not test_type:
+        error_message = "no driver to execute '%s'" % test_source
+        LOG.error(error_message, error_no="00112")
+        if Scheduler.mode != ModeType.decc:
+            return None
+
     # create Descriptor
-    if os.path.isfile(test_source):
-        desc = Descriptor(uuid=uid, name=filename,
-                          source=TestSource(test_source, "", config_file,
-                                            filename, test_type))
-    elif is_config_str(test_source):
-        desc = Descriptor(uuid=uid, name=filename,
-                          source=TestSource("", test_source, config_file,
-                                            filename, test_type))
-    else:
-        raise ParamError("test source '%s' or '%s' not exists" % (
-            test_source, "%s%s" % (test_source, ".json")))
+    uid = unique_id("TestSource", filename)
+    module_name = _parse_module_name(config_file, filename)
+    desc = Descriptor(uuid=uid, name=filename,
+                      source=TestSource(test_source, "", config_file,
+                                        filename, test_type, module_name))
+    if not os.path.isfile(test_source):
+        if is_config_str(test_source):
+            desc = Descriptor(uuid=uid, name=filename,
+                              source=TestSource("", test_source, config_file,
+                                                filename, test_type,
+                                                module_name))
+        else:
+            if config.testcase and not config.testlist:
+                error_message = "test case '%s' or '%s' not exists" % (
+                        "%s%s" % (test_source, PY_SUFFIX), "%s%s" % (
+                            test_source, PYD_SUFFIX))
+                error_no = "00103"
+            else:
+                error_message = "test source '%s' or '%s' not exists" % (
+                    test_source, "%s%s" % (test_source, MODULE_CONFIG_SUFFIX))
+                error_no = "00102"
+            if Scheduler.mode != ModeType.decc:
+                raise ParamError(error_message, error_no=error_no)
+
+    if Scheduler.mode == ModeType.decc and error_message:
+        Scheduler.report_not_executed(config.report_path, [("", desc)],
+                                      error_message)
+        return None
+
     return desc
 
 
-def _get_config_file(filename):
+def _get_config_file(filename, ext=None, config=None):
     config_file = None
-    if os.path.exists(filename + MODULE_CONFIG_SUFFIX):
-        config_file = filename + MODULE_CONFIG_SUFFIX
+    if os.path.exists("%s%s" % (filename, MODULE_CONFIG_SUFFIX)):
+        config_file = "%s%s" % (filename, MODULE_CONFIG_SUFFIX)
+        return config_file
+    if ext and os.path.exists("%s%s%s" % (filename, ext,
+                                          MODULE_CONFIG_SUFFIX)):
+        config_file = "%s%s%s" % (filename, ext, MODULE_CONFIG_SUFFIX)
+        return config_file
+    if config and getattr(config, "testcase", "") and not getattr(
+            config, "testlist"):
+        return _get_testcase_config_file(filename)
+
     return config_file
+
+
+def _get_testcase_config_file(filename):
+    depth = 1
+    dirname = os.path.dirname(filename)
+    while dirname and depth < 6:
+        for item in os.listdir(dirname):
+            item_path = os.path.join(dirname, item)
+            if os.path.isfile(item_path) and item.endswith(
+                    MODULE_CONFIG_SUFFIX):
+                return item_path
+        depth += 1
+        dirname = os.path.dirname(dirname)
+    return None
 
 
 def _get_test_type(config_file, test_driver, ext):
@@ -294,18 +378,25 @@ def _get_test_type(config_file, test_driver, ext):
 
     if config_file:
         if not os.path.exists(config_file):
-            LOG.error("config file '%s' not exists" % config_file)
+            LOG.error("config file '%s' not exists" % config_file,
+                      error_no="00110")
             return ""
         return _get_test_driver(config_file)
 
-    # .py .js .hap, .dex, .bin
     if ext in [".py", ".js", ".dex", ".hap", ".bin"] \
             and ext in EXT_TYPE_DICT.keys():
         test_type = EXT_TYPE_DICT[ext]
-    # .apk
-    elif ext in [".apk"] and ext in EXT_TYPE_DICT.keys():
+    elif ext in [AppConst.app_ext] and ext in EXT_TYPE_DICT.keys():
         test_type = DeviceTestType.hap_test
-    # cxx
     else:
         test_type = DeviceTestType.cpp_test
     return test_type
+
+
+def _parse_module_name(config_file, file_name):
+    if config_file:
+        return get_filename_extension(config_file)[0]
+    else:
+        if "{" in file_name:
+            return "report"
+        return file_name

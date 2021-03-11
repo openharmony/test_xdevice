@@ -18,12 +18,14 @@
 
 from setuptools import setup
 
+INSTALL_REQUIRES = []
+
 
 def main():
     setup(name='xdevice',
           description='xdevice test framework',
           url='',
-          package_dir={'': 'src'},
+          package_dir={'': 'src', 'adapter': 'adapter'},
           packages=['xdevice',
                     'xdevice._core',
                     'xdevice._core.build',
@@ -33,7 +35,8 @@ def main():
                     'xdevice._core.environment',
                     'xdevice._core.executor',
                     'xdevice._core.report',
-                    'xdevice._core.testkit'
+                    'xdevice._core.testkit',
+                    'adapter.xdevice_adapter',
                     ],
           package_data={
               'xdevice._core': [
@@ -49,6 +52,7 @@ def main():
               ]
           },
           zip_safe=False,
+          install_requires=INSTALL_REQUIRES,
           )
 
 

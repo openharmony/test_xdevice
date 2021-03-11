@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -16,6 +16,7 @@
 # limitations under the License.
 #
 
+import copy
 import os
 import socket
 import time
@@ -25,15 +26,19 @@ import subprocess
 import signal
 import uuid
 import json
+import stat
 from tempfile import NamedTemporaryFile
 
 from _core.executor.listener import SuiteResult
 from _core.driver.parser_lite import ShellHandler
 from _core.exception import ParamError
+from _core.exception import ExecuteTerminate
 from _core.logger import platform_logger
 from _core.report.suite_reporter import SuiteReporter
 from _core.plugin import get_plugin
 from _core.plugin import Plugin
+from _core.constants import ModeType
+from _core.constants import ConfigConst
 
 LOG = platform_logger("Utils")
 
@@ -95,31 +100,27 @@ def stop_standing_subprocess(process):
 
 
 def get_decode(stream):
-    if not isinstance(stream, str) and not isinstance(stream, bytes):
+    if isinstance(stream, str):
+        return stream
+
+    if not isinstance(stream, bytes):
+        return str(stream)
+
+    try:
+        ret = stream.decode("utf-8", errors="ignore")
+    except (ValueError, AttributeError, TypeError):
         ret = str(stream)
-    else:
-        try:
-            ret = stream.decode("utf-8", errors="ignore")
-        except (ValueError, AttributeError, TypeError):
-            ret = str(stream)
     return ret
 
 
 def is_proc_running(pid, name=None):
     if platform.system() == "Windows":
-        proc_sub = subprocess.Popen(["C:\\Windows\\System32\\tasklist"],
-                                    stdout=subprocess.PIPE,
-                                    shell=False)
-        proc = subprocess.Popen(["C:\\Windows\\System32\\findstr", "%s" % pid],
-                                stdin=proc_sub.stdout,
-                                stdout=subprocess.PIPE, shell=False)
+        list_command = ["C:\\Windows\\System32\\tasklist"]
+        find_command = ["C:\\Windows\\System32\\findstr", "%s" % pid]
     else:
-        proc_sub = subprocess.Popen(["/bin/ps", "-ef"],
-                                    stdout=subprocess.PIPE,
-                                    shell=False)
-        proc = subprocess.Popen(["/bin/grep", "%s" % pid],
-                                stdin=proc_sub.stdout,
-                                stdout=subprocess.PIPE, shell=False)
+        list_command = ["/bin/ps", "-ef"]
+        find_command = ["/bin/grep", "%s" % pid]
+    proc = _get_find_proc(find_command, list_command)
     (out, _) = proc.communicate()
     out = get_decode(out).strip()
     if out == "":
@@ -128,7 +129,15 @@ def is_proc_running(pid, name=None):
         return True if name is None else out.find(name) != -1
 
 
-def exec_cmd(cmd, timeout=5 * 60, error_print=True):
+def _get_find_proc(find_command, list_command):
+    proc_sub = subprocess.Popen(list_command, stdout=subprocess.PIPE,
+                                shell=False)
+    proc = subprocess.Popen(find_command, stdin=proc_sub.stdout,
+                            stdout=subprocess.PIPE, shell=False)
+    return proc
+
+
+def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False):
     """
     Executes commands in a new shell. Directing stderr to PIPE.
 
@@ -139,35 +148,38 @@ def exec_cmd(cmd, timeout=5 * 60, error_print=True):
         cmd: A sequence of commands and arguments.
         timeout: timeout for exe cmd.
         error_print: print error output or not.
-
+        join_result: join error and out
     Returns:
         The output of the command run.
     """
 
     sys_type = platform.system()
-    if sys_type == "Windows":
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, shell=False)
-    elif sys_type == "Linux" or sys_type == "Darwin":
+    if sys_type == "Linux" or sys_type == "Darwin":
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, shell=False,
-                                preexec_fn=os.setsid)  # @UndefinedVariable
+                                preexec_fn=os.setsid)
     else:
-        return
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, shell=False)
     try:
         (out, err) = proc.communicate(timeout=timeout)
         err = get_decode(err).strip()
         out = get_decode(out).strip()
         if err and error_print:
-            LOG.exception(err)
-        return err if err else out
+            LOG.exception(err, exc_info=False)
+        if join_result:
+            return "%s\n %s" % (out, err) if err else out
+        else:
+            return err if err else out
 
-    except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError):
+    except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,
+            EOFError, IOError):
         sys_type = platform.system()
-        if sys_type == "Windows":
-            os.kill(proc.pid, signal.SIGINT)
-        elif sys_type == "Linux" or sys_type == "Darwin":
+        if sys_type == "Linux" or sys_type == "Darwin":
             os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            os.kill(proc.pid, signal.SIGINT)
+        raise
 
 
 def create_dir(path):
@@ -182,15 +194,26 @@ def create_dir(path):
 
 
 def get_config_value(key, config_dict, is_list=True, default=None):
+    """get corresponding values for key in config_dict
+
+    Args:
+        key: target key in config_dict
+        config_dict: dictionary that store values
+        is_list: decide return values is list type or not
+        default: if key not in config_dict, default value will be returned
+
+    Returns:
+        corresponding values for key
+    """
     if not isinstance(config_dict, dict):
         return default
 
-    value = config_dict.get(key, "")
+    value = config_dict.get(key, None)
     if isinstance(value, bool):
         return value
 
-    if not value:
-        if default:
+    if value is None:
+        if default is not None:
             return default
         return [] if is_list else ""
 
@@ -200,28 +223,48 @@ def get_config_value(key, config_dict, is_list=True, default=None):
 
 
 def get_file_absolute_path(input_name, paths=None, alt_dir=None):
+    """find absolute path for input_name
+
+    Args:
+        input_name: the target file to search
+        paths: path list for searching input_name
+        alt_dir: extra dir that appended to paths
+
+    Returns:
+        absolute path for input_name
+    """
+    input_name = str(input_name)
     abs_paths = set(paths) if paths else set()
     _update_paths(abs_paths)
 
-    for path in abs_paths:
-        if alt_dir:
-            file_path = os.path.join(path, alt_dir, input_name)
+    _inputs = [input_name]
+    if input_name.startswith("resource/"):
+        _inputs.append(input_name.replace("resource/", "", 1))
+    elif input_name.startswith("testcases/"):
+        _inputs.append(input_name.replace("testcases/", "", 1))
+
+    for _input in _inputs:
+        for path in abs_paths:
+            if alt_dir:
+                file_path = os.path.join(path, alt_dir, _input)
+                if os.path.exists(file_path):
+                    return os.path.abspath(file_path)
+
+            file_path = os.path.join(path, _input)
             if os.path.exists(file_path):
                 return os.path.abspath(file_path)
 
-        file_path = os.path.join(path, input_name)
-        if os.path.exists(file_path):
-            return os.path.abspath(file_path)
-
     err_msg = "The file {} does not exist".format(input_name)
-    LOG.error(err_msg)
+    if check_mode(ModeType.decc):
+        LOG.error(err_msg, error_no="00109")
+        err_msg = "Load Error[00109]"
 
     if alt_dir:
         LOG.debug("alt_dir is %s" % alt_dir)
     LOG.debug("paths is:")
     for path in abs_paths:
         LOG.debug(path)
-    raise ParamError(err_msg)
+    raise ParamError(err_msg, error_no="00109")
 
 
 def _update_paths(paths):
@@ -267,7 +310,9 @@ def modify_props(device, local_prop_file, target_prop_file, new_props):
     old_props = {}
     changed_prop_key = []
     lines = []
-    with open(local_prop_file, 'r') as old_file:
+    flags = os.O_RDONLY
+    modes = stat.S_IWUSR | stat.S_IRUSR
+    with os.fdopen(os.open(local_prop_file, flags, modes), "r") as old_file:
         lines = old_file.readlines()
         if lines:
             lines[-1] = lines[-1] + '\n'
@@ -304,25 +349,42 @@ def modify_props(device, local_prop_file, target_prop_file, new_props):
     return is_changed
 
 
-def get_device_log_file(report_path, serial=None, log_name="device_log"):
+def get_device_log_file(report_path, serial=None, log_name="device_log",
+                        device_name=""):
     from xdevice import Variables
     log_path = os.path.join(report_path, Variables.report_vars.log_dir)
     os.makedirs(log_path, exist_ok=True)
 
     serial = serial or time.time_ns()
-    device_file_name = "{}_{}.log".format(log_name, serial)
+    if device_name:
+        serial = "%s_%s" % (device_name, serial)
+    device_file_name = "{}_{}.log".format(log_name, str(serial).replace(
+        ":", "_"))
     device_log_file = os.path.join(log_path, device_file_name)
+    LOG.info("generate device log file: %s", device_log_file)
     return device_log_file
 
 
-def check_result_report(report_path, report_file, error_message="",
-                        report_name=""):
+def check_result_report(report_root_dir, report_file, error_message="",
+                        report_name="", module_name=""):
+    """
+    check whether report_file exits or not. if report_file is not exist,
+    create empty report with error_message under report_root_dir
+    """
+
     if os.path.exists(report_file):
         return report_file
-    result_dir = os.path.join(report_path, "result")
+    report_dir = os.path.dirname(report_file)
+    if os.path.isabs(report_dir):
+        result_dir = report_dir
+    else:
+        result_dir = os.path.join(report_root_dir, "result", report_dir)
     os.makedirs(result_dir, exist_ok=True)
-    LOG.error("report %s not exist, create empty report under %s" % (
-        report_file, result_dir))
+    if check_mode(ModeType.decc):
+        LOG.error("report not exist, create empty report")
+    else:
+        LOG.error("report %s not exist, create empty report under %s" % (
+            report_file, result_dir))
 
     suite_name = report_name
     if not suite_name:
@@ -330,10 +392,26 @@ def check_result_report(report_path, report_file, error_message="",
     suite_result = SuiteResult()
     suite_result.suite_name = suite_name
     suite_result.stacktrace = error_message
+    if module_name:
+        suite_name = module_name
     suite_reporter = SuiteReporter([(suite_result, [])], suite_name,
-                                   result_dir)
+                                   result_dir, modulename=module_name)
     suite_reporter.create_empty_report()
     return "%s.xml" % os.path.join(result_dir, suite_name)
+
+
+def get_sub_path(test_suite_path):
+    pattern = "%stests%s" % (os.sep, os.sep)
+    file_dir = os.path.dirname(test_suite_path)
+    pos = file_dir.find(pattern)
+    if -1 == pos:
+        return ""
+
+    sub_path = file_dir[pos + len(pattern):]
+    pos = sub_path.find(os.sep)
+    if -1 == pos:
+        return ""
+    return sub_path[pos + len(os.sep):]
 
 
 def is_config_str(content):
@@ -346,8 +424,9 @@ def get_version():
     ver_file_path = os.path.join(Variables.res_dir, 'version.txt')
     if not os.path.isfile(ver_file_path):
         return ver
-
-    with open(ver_file_path, mode='r', encoding='UTF-8') as ver_file:
+    flags = os.O_RDONLY
+    modes = stat.S_IWUSR | stat.S_IRUSR
+    with os.fdopen(os.open(ver_file_path, flags, modes), "r") as ver_file:
         line = ver_file.readline()
         if '-v' in line:
             ver = line.strip().split('-')[1]
@@ -370,17 +449,19 @@ def convert_ip(origin_ip):
 
 
 def convert_port(port):
-    if len(port) >= 2:
-        return "{}**{}".format(port[0], port[-1])
+    _port = str(port)
+    if len(_port) >= 2:
+        return "{}{}{}".format(_port[0], "*" * (len(_port) - 2), _port[-1])
     else:
-        return "{}**".format(port)
+        return "*{}".format(_port[-1])
 
 
 def convert_serial(serial):
     if serial.startswith("local_"):
-        return "local_{}".format('*'*(len(serial)-6))
+        return serial
     elif serial.startswith("remote_"):
-        return "remote_{}".format(convert_ip(serial.split("_")[1]))
+        return "remote_{}_{}".format(convert_ip(serial.split("_")[1]),
+                                     convert_port(serial.split("_")[-1]))
     else:
         length = len(serial)//3
         return "{}{}{}".format(
@@ -402,23 +483,43 @@ def get_shell_handler(request, parser_type):
     return handler
 
 
-def get_kit_instances(json_config, resource_path, testcases_path):
+def get_kit_instances(json_config, resource_path="", testcases_path=""):
     from _core.testkit.json_parser import JsonParser
     kit_instances = []
+
+    # check input param
     if not isinstance(json_config, JsonParser):
         return kit_instances
+
+    # get kit instances
     for kit in json_config.config.kits:
         kit["paths"] = [resource_path, testcases_path]
         kit_type = kit.get("type", "")
+        device_name = kit.get("device_name", None)
         if get_plugin(plugin_type=Plugin.TEST_KIT, plugin_id=kit_type):
             test_kit = \
                 get_plugin(plugin_type=Plugin.TEST_KIT, plugin_id=kit_type)[0]
             test_kit_instance = test_kit.__class__()
             test_kit_instance.__check_config__(kit)
+            setattr(test_kit_instance, "device_name", device_name)
             kit_instances.append(test_kit_instance)
         else:
-            raise ParamError("kit %s not exists" % kit_type)
+            raise ParamError("kit %s not exists" % kit_type, error_no="00107")
     return kit_instances
+
+
+def check_device_name(device, kit, step="setup"):
+    kit_device_name = getattr(kit, "device_name", None)
+    device_name = device.get("name")
+    if kit_device_name and device_name and \
+            kit_device_name != device_name:
+        return False
+    if kit_device_name and device_name:
+        LOG.debug("do kit:%s %s for device:%s",
+                  kit.__class__.__name__, step, device_name)
+    else:
+        LOG.debug("do kit:%s %s", kit.__class__.__name__, step)
+    return True
 
 
 def check_path_legal(path):
@@ -458,6 +559,8 @@ def get_local_ip():
         else:
             local_ip = "127.0.0.1"
         return local_ip
+    else:
+        return "127.0.0.1"
 
 
 class SplicingAction(argparse.Action):
@@ -466,16 +569,55 @@ class SplicingAction(argparse.Action):
 
 
 def get_test_component_version(config):
+    if check_mode(ModeType.decc):
+        return ""
+
     try:
         paths = [config.resource_path, config.testcases_path]
         test_file = get_file_absolute_path("test_component.json", paths)
-
-        with open(test_file, encoding="utf-8") as file_content:
+        flags = os.O_RDONLY
+        modes = stat.S_IWUSR | stat.S_IRUSR
+        with os.fdopen(os.open(test_file, flags, modes), "r") as file_content:
             json_content = json.load(file_content)
             version = json_content.get("version", "")
             return version
     except (ParamError, ValueError) as error:
-        LOG.error(
-            "The exception {} happened when get version".format(
-                error))
+        LOG.error("The exception {} happened when get version".format(error))
     return ""
+
+
+def check_mode(mode):
+    from xdevice import Scheduler
+    return Scheduler.mode == mode
+
+
+def do_module_kit_setup(request, kits):
+    for device in request.get_devices():
+        setattr(device, ConfigConst.module_kits, [])
+
+    from xdevice import Scheduler
+    for kit in kits:
+        run_flag = False
+        for device in request.get_devices():
+            if not Scheduler.is_execute:
+                raise ExecuteTerminate()
+            if check_device_name(device, kit):
+                run_flag = True
+                kit_copy = copy.deepcopy(kit)
+                module_kits = getattr(device, ConfigConst.module_kits)
+                module_kits.append(kit_copy)
+                kit_copy.__setup__(device, request=request)
+        if not run_flag:
+            kit_device_name = getattr(kit, "device_name", None)
+            error_msg = "device name '%s' of '%s' not exist" % (
+                kit_device_name, kit.__class__.__name__)
+            LOG.error(error_msg, error_no="00108")
+            raise ParamError(error_msg, error_no="00108")
+
+
+def do_module_kit_teardown(request):
+    for device in request.get_devices():
+        for kit in getattr(device, ConfigConst.module_kits, []):
+            if check_device_name(device, kit, step="teardown"):
+                kit.__teardown__(device)
+        setattr(device, ConfigConst.module_kits, [])

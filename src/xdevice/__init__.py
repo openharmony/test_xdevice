@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -30,6 +30,7 @@ from _core.interface import LifeCycle
 from _core.interface import IShellReceiver
 from _core.interface import ITestKit
 from _core.interface import IListener
+from _core.interface import IReporter
 from _core.exception import ParamError
 from _core.exception import DeviceError
 from _core.exception import LiteDeviceError
@@ -40,7 +41,9 @@ from _core.constants import DeviceLabelType
 from _core.constants import ManagerType
 from _core.constants import DeviceOsType
 from _core.constants import ProductForm
+from _core.constants import TestType
 from _core.constants import CKit
+from _core.constants import ConfigConst
 from _core.config.config_manager import UserConfigManager
 from _core.config.resource_manager import ResourceManager
 from _core.executor.listener import CaseResult
@@ -57,11 +60,17 @@ from _core.utils import get_device_log_file
 from _core.utils import get_kit_instances
 from _core.utils import get_config_value
 from _core.utils import exec_cmd
+from _core.utils import check_device_name
+from _core.utils import do_module_kit_setup
+from _core.utils import do_module_kit_teardown
 from _core.environment.manager_env import DeviceSelectionOption
 from _core.environment.manager_env import EnvironmentManager
 from _core.executor.scheduler import Scheduler
 from _core.report.suite_reporter import SuiteReporter
 from _core.report.suite_reporter import ResultCode
+from _core.report.reporter_helper import ExecInfo
+from _core.report.result_reporter import ResultReporter
+from _core.report.__main__ import main_report
 from _core.command.console import Console
 
 __all__ = [
@@ -78,6 +87,7 @@ __all__ = [
     "IShellReceiver",
     "ITestKit",
     "IListener",
+    "IReporter",
     "ParamError",
     "DeviceError",
     "LiteDeviceError",
@@ -88,7 +98,9 @@ __all__ = [
     "ManagerType",
     "DeviceOsType",
     "ProductForm",
+    "TestType",
     "CKit",
+    "ConfigConst",
     "UserConfigManager",
     "ResourceManager",
     "CaseResult",
@@ -109,13 +121,20 @@ __all__ = [
     "get_device_log_file",
     "get_kit_instances",
     "get_config_value",
-    "exec_cmd"
+    "exec_cmd",
+    "check_device_name",
+    "do_module_kit_setup",
+    "do_module_kit_teardown",
+    "ExecInfo",
+    "ResultReporter",
+    "main_report"
 ]
 
 
 def _load_external_plugins():
     plugins = [Plugin.SCHEDULER, Plugin.DRIVER, Plugin.DEVICE, Plugin.LOG,
-               Plugin.PARSER, Plugin.LISTENER, Plugin.TEST_KIT, Plugin.MANAGER]
+               Plugin.PARSER, Plugin.LISTENER, Plugin.TEST_KIT, Plugin.MANAGER,
+               Plugin.REPORTER]
     for plugin_group in plugins:
         for entry_point in pkg_resources.iter_entry_points(group=plugin_group):
             entry_point.load()

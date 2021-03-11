@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,16 +20,21 @@ import os
 import hashlib
 
 from _core.logger import platform_logger
+from _core.exception import ParamError
 
 __all__ = ["check_pub_key_exist", "do_rsa_encrypt", "do_rsa_decrypt",
            "generate_key_file", "get_file_summary"]
 
 PUBLIC_KEY_FILE = "config/pub.key"
+PRIVATE_KEY_FILE = "config/pri.key"
 LOG = platform_logger("Encrypt")
 
 
 def check_pub_key_exist():
     from xdevice import Variables
+    if Variables.report_vars.pub_key_string:
+        return Variables.report_vars.pub_key_string
+
     if Variables.report_vars.pub_key_file is not None:
         if Variables.report_vars.pub_key_file == "":
             return False
@@ -62,27 +67,31 @@ def do_rsa_encrypt(content):
 
         import rsa
         from xdevice import Variables
-        with open(Variables.report_vars.pub_key_file, 'rb') as key_content:
-            # get params
-            public_key = rsa.PublicKey.load_pkcs1(key_content.read())
-            max_encrypt_len = int(public_key.n.bit_length() / 8) - 11
+        if not Variables.report_vars.pub_key_string:
+            with open(Variables.report_vars.pub_key_file,
+                      'rb') as key_content:
+                Variables.report_vars.pub_key_string = key_content.read()
 
-            try:
-                # encrypt
-                cipher_text = b""
-                for frag in _get_frags(plain_text, max_encrypt_len):
-                    cipher_text_frag = rsa.encrypt(frag, public_key)
-                    cipher_text += cipher_text_frag
-                return cipher_text
-            except rsa.pkcs1.CryptoError as error:
-                error_msg = "rsa encryption error occurs, %s" % error.args[0]
-                LOG.error(error_msg)
-                return bytes(error_msg, 'utf-8')
+        if isinstance(Variables.report_vars.pub_key_string, str):
+            Variables.report_vars.pub_key_string =\
+                bytes(Variables.report_vars.pub_key_string, "utf-8")
 
-    except (ModuleNotFoundError, ValueError, TypeError, UnicodeError) as error:
+        public_key = rsa.PublicKey.load_pkcs1_openssl_pem(
+            Variables.report_vars.pub_key_string)
+
+        max_encrypt_len = int(public_key.n.bit_length() / 8) - 11
+
+        # encrypt
+        cipher_text = b""
+        for frag in _get_frags(plain_text, max_encrypt_len):
+            cipher_text_frag = rsa.encrypt(frag, public_key)
+            cipher_text += cipher_text_frag
+        return cipher_text
+
+    except (ModuleNotFoundError, ValueError, TypeError, UnicodeError,
+            Exception) as error:
         error_msg = "rsa encryption error occurs, %s" % error.args[0]
-        LOG.error(error_msg)
-        return bytes(error_msg, 'utf-8')
+        raise ParamError(error_msg, error_no="00113")
 
 
 def do_rsa_decrypt(content):
@@ -96,8 +105,11 @@ def do_rsa_decrypt(content):
 
         import rsa
         from xdevice import Variables
-        pri_key_file = os.path.join(os.path.dirname(
-            Variables.report_vars.pub_key_file), "pri.key")
+        pri_key_path = os.path.join(Variables.exec_dir, PRIVATE_KEY_FILE)
+        if os.path.exists(pri_key_path):
+            pri_key_file = pri_key_path
+        else:
+            pri_key_file = os.path.join(Variables.top_dir, PRIVATE_KEY_FILE)
         if not os.path.exists(pri_key_file):
             return content
         with open(pri_key_file, "rb") as key_content:
@@ -114,12 +126,12 @@ def do_rsa_decrypt(content):
                 return plain_text.decode(encoding='utf-8')
             except rsa.pkcs1.CryptoError as error:
                 error_msg = "rsa decryption error occurs, %s" % error.args[0]
-                LOG.error(error_msg)
+                LOG.error(error_msg, error_no="00114")
                 return error_msg
 
     except (ModuleNotFoundError, ValueError, TypeError, UnicodeError) as error:
         error_msg = "rsa decryption error occurs, %s" % error.args[0]
-        LOG.error(error_msg)
+        LOG.error(error_msg, error_no="00114")
         return error_msg
 
 
@@ -134,10 +146,17 @@ def generate_key_file(length=2048):
         pub_key, pri_key = key.newkeys(int(length))
         pub_key_pem = pub_key.save_pkcs1().decode()
         pri_key_pem = pri_key.save_pkcs1().decode()
-        with open("pri.key", "w") as file_pri:
+
+        file_pri_open = os.open("pri.key", os.O_WRONLY | os.O_CREAT |
+                                os.O_APPEND, 0o755)
+        file_pub_open = os.open("pub.key", os.O_WRONLY | os.O_CREAT |
+                                os.O_APPEND, 0o755)
+        with os.fdopen(file_pri_open, "w") as file_pri, \
+                os.fdopen(file_pub_open, "w") as file_pub:
             file_pri.write(pri_key_pem)
-        with open("pub.key", "w") as file_pub:
+            file_pri.flush()
             file_pub.write(pub_key_pem)
+            file_pub.flush()
     except ModuleNotFoundError:
         return
 

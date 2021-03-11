@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -55,8 +55,8 @@ def main_report():
     task_info.device_name = "None"
     task_info.test_time = time.strftime(ReportConstant.time_format,
                                         time.localtime())
-    result_report = ResultReporter(report_path, task_info)
-    result_report.generate_reports()
+    result_report = ResultReporter()
+    result_report.__generate_reports__(report_path, task_info=task_info)
 
 
 if __name__ == "__main__":

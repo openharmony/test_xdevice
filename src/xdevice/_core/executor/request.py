@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,6 +19,8 @@
 import datetime
 import os
 
+from _core.constants import ModeType
+from _core.constants import ConfigConst
 from _core.exception import ParamError
 from _core.executor.source import TestSource
 from _core.logger import platform_logger
@@ -68,20 +70,20 @@ class Task:
 
     def init(self, config):
         from xdevice import Variables
+        from xdevice import Scheduler
         start_time = datetime.datetime.now()
         LOG.debug("StartTime=%s" % start_time.strftime("%Y-%m-%d %H:%M:%S"))
 
         self.config.update(config.__dict__)
-        if config.reportpath == "":
+        if getattr(config, ConfigConst.report_path, "") == "":
             Variables.task_name = start_time.strftime('%Y-%m-%d-%H-%M-%S')
         else:
-            Variables.task_name = config.reportpath
+            Variables.task_name = config.report_path
 
         # create a report folder to store test report
         report_path = os.path.join(Variables.exec_dir,
                                    Variables.report_vars.report_dir,
                                    Variables.task_name)
-        LOG.info("Report path: %s", report_path)
         os.makedirs(report_path, exist_ok=True)
         self._check_report_path(report_path)
 
@@ -99,6 +101,9 @@ class Task:
         self.config.report_path = report_path
         self.config.log_path = log_path
         self.config.start_time = start_time.strftime("%Y-%m-%d %H:%M:%S")
+        Scheduler.start_task_log(self.config.log_path)
+        Scheduler.start_encrypt_log(self.config.log_path)
+        LOG.info("Report path: %s", report_path)
 
     def _get_task_dir(self, task_file):
         from xdevice import Variables
@@ -108,15 +113,16 @@ class Task:
             if os.path.normcase(Variables.exec_dir) == \
                     os.path.normcase(Variables.top_dir):
                 raise ParamError("task file %s not exists, please add task "
-                                 "file to '%s'" % (
-                                     task_file, exec_task_dir))
+                                 "file to '%s'" % (task_file, exec_task_dir),
+                                 error_no="00101")
 
             top_task_dir = os.path.abspath(
                 os.path.join(Variables.top_dir, self.TASK_CONFIG_DIR))
             if not os.path.exists(os.path.join(top_task_dir, task_file)):
                 raise ParamError("task file %s not exists, please add task "
                                  "file to '%s' or '%s'" % (
-                                     task_file, exec_task_dir, top_task_dir))
+                                     task_file, exec_task_dir, top_task_dir),
+                                 error_no="00101")
             else:
                 return top_task_dir
         else:
@@ -125,7 +131,8 @@ class Task:
     def _load_task(self, task_dir, file_name):
         task_file = os.path.join(task_dir, file_name)
         if not os.path.exists(task_file):
-            raise ParamError("task file %s not exists" % task_file)
+            raise ParamError("task file %s not exists" % task_file,
+                             error_no="00101")
 
         # add kits to self.config
         json_config = JsonParser(task_file)
@@ -140,9 +147,11 @@ class Task:
         self.root = root
         self._init_driver(root)
         if not self.test_drivers:
-            raise ParamError("no test driver to execute")
+            LOG.error("no test driver to execute", error_no="00106")
 
     def _init_driver(self, test_descriptor):
+        from xdevice import Scheduler
+
         plugin_id = None
         source = test_descriptor.source
 
@@ -150,15 +159,20 @@ class Task:
             if source.test_type is not None:
                 plugin_id = source.test_type
             else:
-                LOG.error("'%s' no test driver specified" % source.test_name)
+                LOG.error("'%s' no test driver specified" % source.test_name,
+                          error_no="00106")
 
         drivers = get_plugin(plugin_type=Plugin.DRIVER, plugin_id=plugin_id)
         if plugin_id is not None:
             if len(drivers) == 0:
-                LOG.error("'%s' can not find test driver '%s'" %
-                          (source.test_name, plugin_id))
+                error_message = "'%s' can not find test driver '%s'" % (
+                    source.test_name, plugin_id)
+                LOG.error(error_message, error_no="00106")
+                if Scheduler.mode == ModeType.decc:
+                    error_message = "Load Error[00106]"
+                    Scheduler.report_not_executed(self.config.report_path, [
+                        ("", test_descriptor)], error_message)
             else:
-                from xdevice import Scheduler
                 check_result = False
                 for driver in drivers:
                     driver_instance = driver.__class__()
@@ -172,7 +186,7 @@ class Task:
                         break
                 if check_result is False:
                     LOG.error("'%s' can not find suitable test driver '%s'" %
-                              (source.test_name, plugin_id))
+                              (source.test_name, plugin_id), error_no="00106")
 
         for desc in test_descriptor.children:
             self._init_driver(desc)
@@ -182,7 +196,8 @@ class Task:
         for _, _, files in os.walk(report_path):
             for _file in files:
                 if _file.endswith(".xml"):
-                    raise ParamError("xml file exists in '%s'" % report_path)
+                    raise ParamError("xml file exists in '%s'" % report_path,
+                                     error_no="00105")
 
 
 class Request:
@@ -201,3 +216,49 @@ class Request:
 
     def get_config(self):
         return self.config
+
+    def get(self, key=None, default=""):
+        # get value from self.config
+        if not key:
+            return default
+        return getattr(self.config, key, default)
+
+    def get_devices(self):
+        if self.config is None:
+            return []
+        if not hasattr(self.config, "environment"):
+            return []
+        if not hasattr(self.config.environment, "devices"):
+            return []
+        return getattr(self.config.environment, "devices", [])
+
+    def get_config_file(self):
+        return self._get_source_value("config_file")
+
+    def get_source_file(self):
+        return self._get_source_value("source_file")
+
+    def get_test_name(self):
+        return self._get_source_value("test_name")
+
+    def get_source_string(self):
+        return self._get_source_value("source_string")
+
+    def get_test_type(self):
+        return self._get_source_value("test_type")
+
+    def get_module_name(self):
+        return self._get_source_value("module_name")
+
+    def _get_source(self):
+        if not hasattr(self.root, "source"):
+            return ""
+        return getattr(self.root, "source", "")
+
+    def _get_source_value(self, key=None, default=""):
+        if not key:
+            return default
+        source = self._get_source()
+        if not source:
+            return default
+        return getattr(source, key, default)

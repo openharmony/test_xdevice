@@ -149,7 +149,7 @@
         table.summary th.modules {
             padding: 20px 35px 0 34px;
         }
-        table.summary th.modules-done, table.summary th.total-tests, table.summary th.passed {
+        table.summary th.run-modules, table.summary th.total-tests, table.summary th.passed {
             padding: 20px 35px 0 0;
         }
         table.summary th.failed, table.summary th.blocked, table.summary th.ignored {
@@ -161,7 +161,7 @@
         table.summary td.modules {
             padding: 5px 35px 20px 34px;
         }
-        table.summary td.modules-done, table.summary td.total-tests, table.summary td.passed {
+        table.summary td.run-modules, table.summary td.total-tests, table.summary td.passed {
             padding: 5px 35px 20px 0;
         }
         table.summary td.failed, table.summary td.blocked, table.summary td.ignored {
@@ -378,20 +378,24 @@
         }
 
         table.failure-test td.test {
+            vertical-align: top;
             width: 569px;
-            padding: 0 0 0 20px;
+            padding: 2px 0 0 20px;
         }
         table.failure-test td.status {
+            vertical-align: top;
             width: 11px;
-            padding: 0 0 0 0;
+            padding: 8px 0 0 0;
         }
         table.failure-test td.result {
+            vertical-align: top;
             width: 80px;
-            padding: 0 0 0 0;
+            padding: 2px 0 0 0;
         }
         table.failure-test td.details {
+            vertical-align: top;
             width: 480px;
-            padding: 0 0 0 0;
+            padding: 2px 0 0 0;
         }
 
         div.hidden {
@@ -433,13 +437,13 @@
             <td class="normal third">Execution Time:</td>
             <td class="normal fourth"><!--{exec_info.execute_time}--></td>
         </tr>
-<!--{exec_info.product_params}-->
+<!--{exec_info.product_info}-->
     </table>
 
     <table class="summary">
         <tr>
             <th class="normal modules color-normal"><!--{summary.modules}--></th>
-            <th class="normal modules-done color-passed"><!--{summary.modules_done}--></th>
+            <th class="normal run-modules color-passed"><!--{summary.run_modules}--></th>
             <th class="normal total-tests color-normal"><!--{summary.total}--></th>
             <th class="normal passed color-passed"><!--{summary.passed}--></th>
             <th class="normal failed <!--{color_type.failed}-->"><!--{summary.failed}--></th>
@@ -449,7 +453,7 @@
         </tr>
         <tr>
             <td class="normal modules">Modules</td>
-            <td class="normal modules-done">Modules Done</td>
+            <td class="normal run-modules">Run Modules</td>
             <td class="normal total-tests">Total Tests</td>
             <td class="normal passed">Passed</td>
             <td class="normal failed">Failed</td>

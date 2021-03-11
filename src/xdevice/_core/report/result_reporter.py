@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,60 +17,96 @@
 #
 
 import os
+import platform
 import shutil
 import time
 import zipfile
 from ast import literal_eval
 
+from _core.interface import IReporter
+from _core.plugin import Plugin
+from _core.constants import ModeType
+from _core.constants import TestType
 from _core.logger import platform_logger
+from _core.exception import ParamError
+from _core.utils import get_filename_extension
 from _core.report.encrypt import check_pub_key_exist
 from _core.report.encrypt import do_rsa_encrypt
 from _core.report.encrypt import get_file_summary
 from _core.report.reporter_helper import DataHelper
+from _core.report.reporter_helper import ExecInfo
 from _core.report.reporter_helper import VisionHelper
 from _core.report.reporter_helper import ReportConstant
 
 LOG = platform_logger("ResultReporter")
 
 
-class ResultReporter:
+@Plugin(type=Plugin.REPORTER, id=TestType.all)
+class ResultReporter(IReporter):
+    summary_report_result = []
 
-    def __init__(self, report_path, task_info):
-        self.report_path = report_path
-        self.task_info = task_info
-        self.data_helper = DataHelper()
-        self.vision_helper = VisionHelper()
-        self.summary_data_path = os.path.join(
-            self.report_path, ReportConstant.summary_data_report)
-        self.exec_info = task_info
+    def __init__(self):
+        self.report_path = None
+        self.task_info = None
+        self.summary_data_path = None
+        self.summary_data_str = ""
+        self.exec_info = None
+        self.parsed_data = None
+        self.data_helper = None
+        self.vision_helper = None
 
-    def generate_reports(self):
+    def __generate_reports__(self, report_path, **kwargs):
         LOG.info("")
         LOG.info("**************************************************")
         LOG.info("************** Start generate reports ************")
         LOG.info("**************************************************")
         LOG.info("")
 
-        # generate data report
-        self._generate_data_report()
+        if self._check_params(report_path, **kwargs):
+            # generate data report
+            self._generate_data_report()
 
-        # generate vision reports
-        self._generate_vision_reports()
+            # generate vision reports
+            self._generate_vision_reports()
 
-        # generate summary ini
-        self._generate_summary()
+            # generate task info record
+            self._generate_task_info_record()
 
-        # copy reports to reports/latest folder
-        self._copy_report()
+            # generate summary ini
+            self._generate_summary()
 
-        # compress report folder
-        self._compress_report_folder()
+            # copy reports to reports/latest folder
+            self._copy_report()
+
+            # compress report folder
+            self._compress_report_folder()
 
         LOG.info("")
         LOG.info("**************************************************")
         LOG.info("************** Ended generate reports ************")
         LOG.info("**************************************************")
         LOG.info("")
+
+    def _check_params(self, report_path, **kwargs):
+        task_info = kwargs.get("task_info", "")
+        if not report_path:
+            LOG.error("report path is wrong", error_no="00440",
+                      ReportPath=report_path)
+            return False
+        if not task_info or not isinstance(task_info, ExecInfo):
+            LOG.error("task info is wrong", error_no="00441",
+                      TaskInfo=task_info)
+            return False
+
+        os.makedirs(report_path, exist_ok=True)
+        self.report_path = report_path
+        self.task_info = task_info
+        self.summary_data_path = os.path.join(
+            self.report_path, ReportConstant.summary_data_report)
+        self.exec_info = task_info
+        self.data_helper = DataHelper()
+        self.vision_helper = VisionHelper()
+        return True
 
     def _generate_data_report(self):
         # initial element
@@ -82,32 +118,24 @@ class ResultReporter:
             return
 
         # generate report
-        if not self._check_mode(ReportConstant.decc_mode):
+        if not self._check_mode(ModeType.decc):
             self.data_helper.generate_report(test_suites_element,
                                              self.summary_data_path)
 
         # set SuiteReporter.suite_report_result
         if not check_pub_key_exist() and not self._check_mode(
-                ReportConstant.decc_mode):
+                ModeType.decc):
             return
-        from xdevice import SuiteReporter
-        SuiteReporter.suite_report_result = [(
-            self.summary_data_path, DataHelper.to_string(
-                test_suites_element))]
+        self.set_summary_report_result(
+            self.summary_data_path, DataHelper.to_string(test_suites_element))
 
-        if self._check_mode(ReportConstant.decc_mode):
+        if self._check_mode(ModeType.decc):
             try:
-                from devicetest.agent.auth_server import Handler
+                from agent.decc import Handler
                 from xdevice import Scheduler
+                LOG.info("upload task summary result to decc")
                 Handler.upload_task_summary_results(
-                    SuiteReporter.suite_report_result[0][1])
-                tmp_element = self.data_helper.initial_suites_element()
-                for child in test_suites_element:
-                    result, _ = Scheduler.get_script_result(child)
-                    if result == "Passed":
-                        tmp_element.append(child)
-                SuiteReporter.suite_report_result = [(
-                    self.summary_data_path, DataHelper.to_string(tmp_element))]
+                    self.get_result_of_summary_report())
             except ModuleNotFoundError as error:
                 LOG.error("module not found %s", error.args)
 
@@ -128,12 +156,13 @@ class ResultReporter:
             total = int(root.get(ReportConstant.tests, 0))
             modules[module_name] = modules.get(module_name, 0) + total
 
-            self._append_product_params(test_suites_attributes, root)
+            self._append_product_info(test_suites_attributes, root)
             for child in root:
                 child.tail = self.data_helper.LINE_BREAK_INDENT
-                if not child.get(ReportConstant.module) or child.get(
-                        ReportConstant.module) == ReportConstant.empty_name:
-                    child.set(ReportConstant.module, module_name)
+                if not child.get(ReportConstant.module_name) or child.get(
+                        ReportConstant.module_name) == \
+                        ReportConstant.empty_name:
+                    child.set(ReportConstant.module_name, module_name)
                 self._check_tests_and_unavailable(child)
                 test_suite_elements.append(child)
                 for update_attribute in need_update_attributes:
@@ -156,7 +185,7 @@ class ResultReporter:
         if modules_zero:
             LOG.info("the total tests of %s module is 0", ",".join(
                 modules_zero))
-        test_suites_attributes[ReportConstant.modules_done] = \
+        test_suites_attributes[ReportConstant.run_modules] = \
             len(modules) - len(modules_zero)
         test_suites_attributes[ReportConstant.modules] = len(modules)
         self.data_helper.set_element_attributes(test_suites_element,
@@ -175,37 +204,36 @@ class ResultReporter:
                 ReportConstant.name), total, unavailable)
 
     @classmethod
-    def _append_product_params(cls, test_suites_attributes, root):
-        product_params = root.get(ReportConstant.product_params, "")
-        if not product_params:
+    def _append_product_info(cls, test_suites_attributes, root):
+        product_info = root.get(ReportConstant.product_info, "")
+        if not product_info:
             return
         try:
-            product_params = literal_eval(str(product_params))
+            product_info = literal_eval(str(product_info))
         except SyntaxError as error:
             LOG.error("%s %s", root.get(ReportConstant.name, ""), error.args)
-            return
+            product_info = {}
 
-        if not test_suites_attributes[ReportConstant.product_params]:
-            test_suites_attributes[ReportConstant.product_params] = \
-                product_params
+        if not test_suites_attributes[ReportConstant.product_info]:
+            test_suites_attributes[ReportConstant.product_info] = \
+                product_info
             return
-        for key, value in product_params.items():
+        for key, value in product_info.items():
             exist_value = test_suites_attributes[
-                ReportConstant.product_params].get(key, "")
+                ReportConstant.product_info].get(key, "")
 
             if not exist_value:
                 test_suites_attributes[
-                    ReportConstant.product_params][key] = value
+                    ReportConstant.product_info][key] = value
                 continue
             if value in exist_value:
                 continue
-            test_suites_attributes[ReportConstant.product_params][key] = \
+            test_suites_attributes[ReportConstant.product_info][key] = \
                 "%s,%s" % (exist_value, value)
 
     @classmethod
     def _get_module_name(cls, data_report, root):
         # get module name from data report
-        from _core.utils import get_filename_extension
         module_name = get_filename_extension(data_report)[0]
         if "report" in module_name or "summary" in module_name or \
                 "<" in data_report or ">" in data_report:
@@ -225,8 +253,8 @@ class ResultReporter:
             ReportConstant.errors: 0, ReportConstant.disabled: 0,
             ReportConstant.failures: 0, ReportConstant.tests: 0,
             ReportConstant.ignored: 0, ReportConstant.unavailable: 0,
-            ReportConstant.product_params: self.task_info.product_params,
-            ReportConstant.modules: 0, ReportConstant.modules_done: 0}
+            ReportConstant.product_info: self.task_info.product_info,
+            ReportConstant.modules: 0, ReportConstant.run_modules: 0}
         need_update_attributes = [ReportConstant.tests, ReportConstant.ignored,
                                   ReportConstant.failures,
                                   ReportConstant.disabled,
@@ -235,31 +263,43 @@ class ResultReporter:
         return test_suites_attributes, need_update_attributes
 
     def _generate_vision_reports(self):
-        if not self.summary_data_report_exist:
+        if not self._check_mode(ModeType.decc) and not \
+                self.summary_data_report_exist:
             LOG.error("summary data report not exists")
             return
 
-        if check_pub_key_exist():
-            from xdevice import SuiteReporter
-            if not SuiteReporter.get_report_result():
+        if check_pub_key_exist() or self._check_mode(ModeType.decc):
+            if not self.summary_report_result_exists():
                 LOG.error("summary data report not exists")
                 return
-            self.summary_data_path = SuiteReporter.get_report_result()[0][1]
-            SuiteReporter.clear_report_result()
+            self.summary_data_str = \
+                self.get_result_of_summary_report()
+            if check_pub_key_exist():
+                from xdevice import SuiteReporter
+                SuiteReporter.clear_report_result()
 
         # parse data
-        summary_element_tree = self.data_helper.parse_data_report(
-            self.summary_data_path)
+        if self.summary_data_str:
+            # only in decc mode and pub key, self.summary_data_str is not empty
+            summary_element_tree = self.data_helper.parse_data_report(
+                self.summary_data_str)
+        else:
+            summary_element_tree = self.data_helper.parse_data_report(
+                self.summary_data_path)
         parsed_data = self.vision_helper.parse_element_data(
             summary_element_tree, self.report_path, self.task_info)
+        self.parsed_data = parsed_data
         self.exec_info, summary, _ = parsed_data
-        if not check_pub_key_exist():
-            LOG.info("Summary result: modules: %s, modules done: %s, total: "
-                     "%s, passed: %s, failed: %s, blocked: %s, ignored: %s, "
-                     "unavailable: %s", summary.modules, summary.modules_done,
-                     summary.result.total, summary.result.passed,
-                     summary.result.failed, summary.result.blocked,
-                     summary.result.ignored, summary.result.unavailable)
+
+        if self._check_mode(ModeType.decc):
+            return
+
+        LOG.info("Summary result: modules: %s, run modules: %s, total: "
+                 "%s, passed: %s, failed: %s, blocked: %s, ignored: %s, "
+                 "unavailable: %s", summary.modules, summary.run_modules,
+                 summary.result.total, summary.result.passed,
+                 summary.result.failed, summary.result.blocked,
+                 summary.result.ignored, summary.result.unavailable)
         LOG.info("Log path: %s", self.exec_info.log_path)
 
         # generate summary vision report
@@ -298,18 +338,23 @@ class ResultReporter:
 
     @property
     def summary_data_report_exist(self):
-        if self._check_mode(ReportConstant.decc_mode):
-            return False
-        return os.path.exists(self.summary_data_path) or (
-            "<" in self.summary_data_path and ">" in self.summary_data_path)
+        return "<" in self.summary_data_str or \
+               os.path.exists(self.summary_data_path)
 
     @property
     def data_reports(self):
-        if check_pub_key_exist() or self._check_mode(ReportConstant.decc_mode):
+        if check_pub_key_exist() or self._check_mode(ModeType.decc):
             from xdevice import SuiteReporter
             suite_reports = SuiteReporter.get_report_result()
-            data_reports = [(suite_report[1], ReportConstant.empty_name) for
-                            suite_report in suite_reports]
+            if self._check_mode(ModeType.decc):
+                LOG.debug("handle history result, data_reports length:{}".
+                          format(len(suite_reports)))
+                SuiteReporter.clear_history_result()
+                SuiteReporter.append_history_result(suite_reports)
+            data_reports = []
+            for report_path, report_result in suite_reports:
+                module_name = get_filename_extension(report_path)[0]
+                data_reports.append((report_result, module_name))
             SuiteReporter.clear_report_result()
             return data_reports
 
@@ -344,7 +389,8 @@ class ResultReporter:
         return module_name
 
     def _generate_summary(self):
-        if not self.summary_data_report_exist:
+        if not self.summary_data_report_exist or \
+                self._check_mode(ModeType.decc):
             return
         summary_ini_content = \
             "[default]\n" \
@@ -357,27 +403,41 @@ class ResultReporter:
                 self.exec_info.platform, self.exec_info.test_type,
                 self.exec_info.device_name, self.exec_info.host_info,
                 self.exec_info.test_time, self.exec_info.execute_time)
-        if self.exec_info.product_params:
-            for key, value in self.exec_info.product_params.items():
+        if self.exec_info.product_info:
+            for key, value in self.exec_info.product_info.items():
                 summary_ini_content = "{}{}".format(
                     summary_ini_content, "%s=%s\n" % (key, value))
-        summary_ini_content = "{}{}".format(
-            summary_ini_content, "Log Path=%s\n" % self.exec_info.log_path)
+
+        if not self._check_mode(ModeType.factory):
+            summary_ini_content = "{}{}".format(
+                summary_ini_content, "Log Path=%s\n" % self.exec_info.log_path)
 
         # write summary_ini_content
         summary_filepath = os.path.join(self.report_path,
                                         ReportConstant.summary_ini)
-        with open(summary_filepath, 'wb') as file_handler:
+
+        if platform.system() == "Windows":
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_BINARY
+        else:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        summary_filepath_open = os.open(summary_filepath, flags, 0o755)
+
+        with os.fdopen(summary_filepath_open, "wb") as file_handler:
             if check_pub_key_exist():
-                cipher_text = do_rsa_encrypt(summary_ini_content)
+                try:
+                    cipher_text = do_rsa_encrypt(summary_ini_content)
+                except ParamError as error:
+                    LOG.error(error, error_no=error.error_no)
+                    cipher_text = b""
                 file_handler.write(cipher_text)
             else:
                 file_handler.write(bytes(summary_ini_content, 'utf-8'))
+            file_handler.flush()
             LOG.info("generate summary ini: %s", summary_filepath)
 
     def _copy_report(self):
         from xdevice import Scheduler
-        if Scheduler.upload_address:
+        if Scheduler.upload_address or self._check_mode(ModeType.decc):
             return
 
         from xdevice import Variables
@@ -398,10 +458,11 @@ class ResultReporter:
             return
 
     def _compress_report_folder(self):
+        if self._check_mode(ModeType.decc):
+            return
+
         if not os.path.isdir(self.report_path):
             LOG.error("'%s' is not folder!" % self.report_path)
-            return
-        if self._check_mode(ReportConstant.decc_mode):
             return
 
         # get file path list
@@ -431,12 +492,149 @@ class ResultReporter:
         # generate hex digest, then save it to summary_report.hash
         hash_file = os.path.abspath(os.path.join(
             self.report_path, ReportConstant.summary_report_hash))
-        with open(hash_file, "w") as hash_file_handler:
+        hash_file_open = os.open(hash_file,
+                                 os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o755)
+        with os.fdopen(hash_file_open, "w") as hash_file_handler:
             hash_file_handler.write(get_file_summary(zipped_file))
             LOG.info("generate hash file: %s", hash_file)
+            hash_file_handler.flush()
         return zipped_file
 
     @classmethod
     def _check_mode(cls, mode):
         from xdevice import Scheduler
         return Scheduler.mode == mode
+
+    def _generate_task_info_record(self):
+        # under encryption status, don't handle anything directly
+        if check_pub_key_exist() and not self._check_mode(ModeType.decc):
+            return
+
+        # get info from command_queue
+        from xdevice import Scheduler
+        if not Scheduler.command_queue:
+            return
+        _, command, report_path = Scheduler.command_queue[-1]
+
+        # handle parsed data
+        record = self._parse_record_from_data(command, report_path)
+
+        def encode(content):
+            # inner function to encode
+            return ' '.join([bin(ord(c)).replace('0b', '') for c in content])
+
+        # write into file
+        import json
+        record_file = os.path.join(self.report_path,
+                                   ReportConstant.task_info_record)
+        _record_json = json.dumps(record, indent=2)
+
+        with open(file=record_file, mode="wb") as file:
+            if Scheduler.mode == ModeType.decc:
+                # under decc, write in encoded text
+                file.write(bytes(encode(_record_json), encoding="utf-8"))
+            else:
+                # others, write in plain text
+                file.write(bytes(_record_json, encoding="utf-8"))
+
+        LOG.info("generate record file: %s", record_file)
+
+    def _parse_record_from_data(self, command, report_path):
+        record = dict()
+        if self.parsed_data:
+            _, _, suites = self.parsed_data
+            unsuccessful = dict()
+            module_set = set()
+            for suite in suites:
+                module_set.add(suite.module_name)
+
+                failed = unsuccessful.get(suite.module_name, [])
+                # because suite not contains case's some attribute,
+                # for example, 'module', 'classname', 'name' . so
+                # if unavailable, only add module's name into list.
+                if int(suite.result.unavailable) > 0:
+                    failed.append(suite.module_name)
+                else:
+                    # others, get key attributes join string
+                    for case in suite.get_cases():
+                        if not case.is_passed():
+                            failed.append(
+                                "{}#{}".format(case.classname, case.name))
+                unsuccessful.update({suite.module_name: failed})
+            data_reports = self._get_data_reports(module_set)
+            record = {"command": command,
+                      "session_id": os.path.split(report_path)[-1],
+                      "report_path": report_path,
+                      "unsuccessful_params": unsuccessful,
+                      "data_reports": data_reports
+                      }
+        return record
+
+    def _get_data_reports(self, module_set):
+        data_reports = dict()
+        if self._check_mode(ModeType.decc):
+            from xdevice import SuiteReporter
+            for module_name, report_path, report_result in \
+                    SuiteReporter.get_history_result_list():
+                if module_name in module_set:
+                    data_reports.update({module_name: report_path})
+        else:
+            for report_path, module_name in self.data_reports:
+                if module_name == ReportConstant.empty_name:
+                    root = self.data_helper.parse_data_report(report_path)
+                    module_name = self._get_module_name(report_path, root)
+                if module_name in module_set:
+                    data_reports.update({module_name: report_path})
+
+        return data_reports
+
+    @classmethod
+    def get_task_info_params(cls, history_path):
+        # under encryption status, don't handle anything directly
+        if check_pub_key_exist() and not cls._check_mode(ModeType.decc):
+            return ()
+
+        def decode(content):
+            return ''.join([chr(i) for i in [int(b, 2) for b in
+                                             content.split(' ')]])
+
+        record_path = os.path.join(history_path,
+                                   ReportConstant.task_info_record)
+        if not os.path.exists(record_path):
+            LOG.error("%s not exists!", ReportConstant.task_info_record)
+            return ()
+
+        import json
+        from xdevice import Scheduler
+        with open(record_path, mode="rb") as file:
+            if Scheduler.mode == ModeType.decc:
+                # under decc, read from encoded text
+                result = json.loads(decode(file.read().decode("utf-8")))
+            else:
+                # others, read from plain text
+                result = json.loads(file.read())
+        if not len(result.keys()) == 5:
+            LOG.error("%s error!", ReportConstant.task_info_record)
+            return ()
+
+        return result["session_id"], result["command"], result["report_path"],\
+               result["unsuccessful_params"], result["data_reports"]
+
+    @classmethod
+    def set_summary_report_result(cls, summary_data_path, result_xml):
+        cls.summary_report_result.clear()
+        cls.summary_report_result.append((summary_data_path, result_xml))
+
+    @classmethod
+    def get_result_of_summary_report(cls):
+        if cls.summary_report_result:
+            return cls.summary_report_result[0][1]
+
+    @classmethod
+    def summary_report_result_exists(cls):
+        return True if cls.summary_report_result else False
+
+    @classmethod
+    def get_path_of_summary_report(cls):
+        if cls.summary_report_result:
+            return cls.summary_report_result[0][0]

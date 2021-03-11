@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -23,16 +23,19 @@ import string
 import subprocess
 import shutil
 import platform
+import glob
 
 from _core.logger import platform_logger
 from _core.plugin import Plugin
 from _core.config.config_manager import UserConfigManager
 from _core.constants import CKit
+from _core.constants import ConfigConst
 from _core.constants import ComType
 from _core.constants import DeviceLiteKernel
 from _core.constants import DeviceTestType
 from _core.exception import LiteDeviceMountError
 from _core.exception import ParamError
+from _core.exception import LiteDeviceError
 from _core.interface import ITestKit
 from _core.utils import get_config_value
 from _core.utils import get_file_absolute_path
@@ -40,9 +43,11 @@ from _core.utils import get_local_ip
 from _core.utils import get_test_component_version
 from _core.exception import LiteDeviceConnectError
 from _core.constants import DeviceLabelType
+from _core.environment.manager_env import DeviceAllocationState
 
 
-__all__ = ["DeployKit", "MountKit", "RootFsKit", "QueryKit"]
+__all__ = ["DeployKit", "MountKit", "RootFsKit", "QueryKit", "LiteShellKit",
+           "LiteAppInstallKit"]
 LOG = platform_logger("KitLite")
 
 RESET_CMD = "0xEF, 0xBE, 0xAD, 0xDE, 0x0C, 0x00, 0x87, 0x78, 0x00, 0x00, " \
@@ -58,68 +63,53 @@ class DeployKit(ITestKit):
         self.paths = ""
 
     def __check_config__(self, config):
-        self.timeout = str(int(get_config_value('timeout', config,
-                                                is_list=False)) * 1000)
+        self.timeout = str(int(get_config_value(
+            'timeout', config, is_list=False, default=0)) * 1000)
         self.burn_file = get_config_value('burn_file', config, is_list=False)
         burn_command = get_config_value('burn_command', config, is_list=False,
                                         default=RESET_CMD)
         self.burn_command = burn_command.replace(" ", "").split(",")
         self.paths = get_config_value('paths', config)
-        if not self.timeout or not self.burn_file or not self.burn_command:
-            msg = "The config for deploy kit is invalid with timeout:{} " \
-                  "burn_file:{} burn_command:{}".format(self.timeout,
-                                                        self.burn_file,
-                                                        self.burn_command)
-            LOG.error(msg)
-            raise TypeError(msg)
+        if self.timeout == "0" or not self.burn_file:
+            msg = "The config for deploy kit is invalid with timeout:{}, " \
+                  "burn_file:{}".format(self.timeout, self.burn_file)
+            raise ParamError(msg, error_no="00108")
 
-    def __setup__(self, device, **kwargs):
-        """
-        Execute reset command on the device by cmd serial port and then upload
-        patch file by deploy tool.
-        Parameters:
-            device: the instance of LocalController with one or more
-                    ComController
-        """
-        del kwargs
-        LOG.debug(
-            "Deploy kit params:{}".format(self.get_plugin_config().__dict__))
-        cmd_com = device.com_dict.get(ComType.cmd_com)
-        LOG.info("The cmd com is {}".format(cmd_com.serial_port))
+    def _reset(self, device):
+        cmd_com = device.device.com_dict.get(ComType.cmd_com)
         try:
             cmd_com.connect()
             cmd_com.execute_command(
                 command='AT+RST={}'.format(self.timeout))
             cmd_com.close()
         except (LiteDeviceConnectError, IOError) as error:
+            device.device_allocation_state = DeviceAllocationState.unusable
             LOG.error(
                 "The exception {} happened in deploy kit running".format(
-                    error))
-            return False
+                    error), error_no=getattr(error, "error_no",
+                                             "00000"))
+            raise LiteDeviceError("%s port set_up wifiiot failed" %
+                                  cmd_com.serial_port,
+                                  error_no=getattr(error, "error_no",
+                                                   "00000"))
         finally:
             if cmd_com:
                 cmd_com.close()
+
+    def _send_file(self, device):
         burn_tool_name = "HiBurn.exe" if os.name == "nt" else "HiBurn"
         burn_tool_path = get_file_absolute_path(
             os.path.join("tools", burn_tool_name), self.paths)
-        if not os.path.exists(burn_tool_path):
-            LOG.error('The burn tool {} does not exist, please check!'.format(
-                burn_tool_path))
-            return False
         patch_file = get_file_absolute_path(self.burn_file, self.paths)
-        if not os.path.exists(patch_file):
-            LOG.error('The patch file {} does not exist, please check!'.format(
-                patch_file))
-            return False
-        deploy_serial_port = device.com_dict.get(
+        deploy_serial_port = device.device.com_dict.get(
             ComType.deploy_com).serial_port
-        deploy_baudrate = device.com_dict.get(ComType.deploy_com).baund_rate
+        deploy_baudrate = device.device.com_dict.\
+            get(ComType.deploy_com).baud_rate
         port_number = re.findall(r'\d+$', deploy_serial_port)
         if not port_number:
-            LOG.error(
-                "The config of serial port {} to deploy is invalid".format(
-                    deploy_serial_port))
-            return False
+            raise LiteDeviceError("The config of serial port {} to deploy is "
+                                  "invalid".format(deploy_serial_port),
+                                  error_no="00108")
         new_temp_tool_path = copy_file_as_temp(burn_tool_path, 10)
         cmd = '{} -com:{} -bin:{} -signalbaud:{}' \
             .format(new_temp_tool_path, port_number[0], patch_file,
@@ -131,9 +121,22 @@ class DeployKit(ITestKit):
             'Deploy kit to execute burn tool finished with return_code: {} '
             'output: {}'.format(return_code, out))
         os.remove(new_temp_tool_path)
-        if 0 == return_code:
-            return True
-        return False
+        if 0 != return_code:
+            device.device_allocation_state = DeviceAllocationState.unusable
+            raise LiteDeviceError("%s port set_up wifiiot failed" %
+                                  deploy_serial_port, error_no="00402")
+
+    def __setup__(self, device, **kwargs):
+        """
+        Execute reset command on the device by cmd serial port and then upload
+        patch file by deploy tool.
+        Parameters:
+            device: the instance of LocalController with one or more
+                    ComController
+        """
+        del kwargs
+        self._reset(device)
+        self._send_file(device)
 
     def __teardown__(self, device):
         pass
@@ -159,8 +162,8 @@ class MountKit(ITestKit):
         if not self.mount_list:
             msg = "The config for mount kit is invalid with mount:{}" \
                   .format(self.mount_list)
-            LOG.error(msg)
-            raise TypeError(msg)
+            LOG.error(msg, error_no="00108")
+            raise TypeError("Load Error[00108]")
 
     def mount_on_board(self, device=None, remote_info=None, case_type=""):
         """
@@ -180,7 +183,8 @@ class MountKit(ITestKit):
             True or False, represent init Failed or success
         """
         if not remote_info:
-            raise ParamError("failed to get server environment")
+            raise ParamError("failed to get server environment",
+                             error_no="00108")
 
         linux_host = remote_info.get("ip", "")
         linux_directory = remote_info.get("dir", "")
@@ -188,40 +192,47 @@ class MountKit(ITestKit):
         liteos_commands = ["cd /", "umount device_directory",
                            "mount nfs_ip:nfs_directory  device"
                            "_directory nfs"]
-        linux_commands = ["cd /", "umount device_directory",
-                          "mount -t nfs -o nolock -o tcp nfs_ip:nfs_directory"
-                          "device_directory", "chmod 755 -R device_directory"]
+        linux_commands = ["cd /%s" % "storage",
+                          "fuser -k  /%s/%s" % ("storage", "device_directory"),
+                          "umount -f /%s/%s" % ("storage", "device_directory"),
+                          "mount -t nfs -o nolock -o tcp nfs_ip:nfs_directory "
+                          "/%s/%s" % ("storage", "device_directory"),
+                          "chmod 755 -R /%s/%s" % (
+                          "storage", "device_directory")]
         if not linux_host or not linux_directory:
-            raise LiteDeviceMountError("nfs server miss ip or directory")
-        if device.device_connect_type == "local":
-            device.local_device.flush_input()
+            raise LiteDeviceMountError(
+                "nfs server miss ip or directory[00108]", error_no="00108")
 
         commands = []
         if device.label == "ipcamera":
             env_result, status, _ = device.execute_command_with_timeout(
-                command="uname", timeout=1)
+                command="uname", timeout=1, retry=2)
             if status:
-                if env_result.find(DeviceLiteKernel.linux_kernel) != -1:
+                if env_result.find(DeviceLiteKernel.linux_kernel) != -1 or \
+                        env_result.find("Linux") != -1:
                     commands = linux_commands
                     device.__set_device_kernel__(DeviceLiteKernel.linux_kernel)
                 else:
                     commands = liteos_commands
                     device.__set_device_kernel__(DeviceLiteKernel.lite_kernel)
             else:
-                raise LiteDeviceMountError("failed to get device env")
+                raise LiteDeviceMountError("failed to get device env[00402]",
+                                           error_no="00402")
 
         for mount_file in self.mount_list:
             target = mount_file.get("target", "/test_root")
             if target in self.mounted_dir:
+                LOG.debug("%s is mounted" % target)
                 continue
             mkdir_on_board(device, target)
+
             # local nfs server need use alias of dir to mount
             if is_remote.lower() == "false":
                 linux_directory = get_mount_dir(linux_directory)
             for command in commands:
                 command = command.replace("nfs_ip", linux_host). \
                     replace("nfs_directory", linux_directory).replace(
-                    "device_directory", target)
+                    "device_directory", target).replace("//", "/")
                 timeout = 15 if command.startswith("mount") else 1
                 result, status, _ = device.execute_command_with_timeout(
                     command=command, case_type=case_type, timeout=timeout)
@@ -233,12 +244,17 @@ class MountKit(ITestKit):
         """
         Mount the file to the board by the nfs server.
         """
+        LOG.debug("start mount kit setup")
+
         request = kwargs.get("request", None)
         if not request:
-            raise ParamError("MountKit setup request is None")
+            raise ParamError("MountKit setup request is None",
+                             error_no="02401")
         device.connect()
 
-        config_manager = UserConfigManager(env=request.config.test_environment)
+        config_manager = UserConfigManager(
+            config_file=request.get(ConfigConst.configfile, ""),
+            env=request.get(ConfigConst.test_environment, ""))
         remote_info = config_manager.get_user_config("testcases/server",
                                                      filter_name=self.server)
 
@@ -271,7 +287,9 @@ class MountKit(ITestKit):
             else:
                 file_local_paths.append(file_path)
 
-        config_manager = UserConfigManager(env=request.config.test_environment)
+        config_manager = UserConfigManager(
+            config_file=request.get(ConfigConst.configfile, ""),
+            env=request.get(ConfigConst.test_environment, ""))
         remote_info = config_manager.get_user_config("testcases/server",
                                                      filter_name=self.server)
         self.remote_info = remote_info
@@ -279,7 +297,7 @@ class MountKit(ITestKit):
         if not remote_info:
             err_msg = "The name of remote device {} does not match". \
                 format(self.remote)
-            LOG.error(err_msg)
+            LOG.error(err_msg, error_no="00403")
             raise TypeError(err_msg)
         is_remote = remote_info.get("remote", "false")
         if (str(get_local_ip()) == linux_host) and (
@@ -303,47 +321,53 @@ class MountKit(ITestKit):
                 except (OSError, Exception) as exception:
                     msg = "copy file to nfs server failed with error {}" \
                         .format(exception)
-                    LOG.error(msg)
-                    raise LiteDeviceMountError(exception)
+                    LOG.error(msg, error_no="00403")
             # local copy
             else:
-                shutil.copy(_file, remote_info.get("dir"))
+                for count in range(1, 4):
+                    shutil.copy(_file, remote_info.get("dir"))
+                    if check_server_file(_file, remote_info.get("dir")):
+                        break
+                    else:
+                        LOG.info(
+                            "Trying to copy the file from {} to nfs "
+                            "server {} times".format(_file, count))
+                        if count == 3:
+                            msg = "copy {} to nfs server " \
+                                  "failed {} times".format(
+                                os.path.basename(_file), count)
+                            LOG.error(msg, error_no="00403")
+                            LOG.debug("Nfs server:{}".format(glob.glob(
+                                os.path.join(remote_info.get("dir"), '*.*'))))
+
             self.file_name_list.append(os.path.basename(_file))
 
         return self.file_name_list
 
     def __teardown__(self, device):
-        device.execute_command_with_timeout(command="cd /", timeout=1)
-        for mounted_dir in self.mounted_dir:
-            device.execute_command_with_timeout(command="umount {}".
-                                                format(mounted_dir),
-                                                timeout=2)
-            device.execute_command_with_timeout(command="rm -r {}".
-                                                format(mounted_dir),
+        if device.__get_device_kernel__() == DeviceLiteKernel.linux_kernel:
+            device.execute_command_with_timeout(command="cd /storage",
                                                 timeout=1)
-
-        is_remote = self.remote_info.get("remote", "false")
-        for _file in self.file_name_list:
-            LOG.info("Trying to delete the file from nfs server".
-                     format(_file))
-            try:
-                if is_remote.lower() == "true":
-                    import paramiko
-                    client = paramiko.Transport(
-                        (self.remote_info.get("ip"),
-                         int(self.remote_info.get("port"))))
-                    client.connect(
-                        username=self.remote_info.get("username"),
-                        password=self.remote_info.get("password"))
-                    sftp = paramiko.SFTPClient.from_transport(client)
-                    file_path = "{}{}".format(
-                        self.remote_info.get("dir"), _file)
-                    sftp.remove(file_path)
-                    client.close()
-                else:
-                    os.remove(os.path.join(self.remote_info.get("dir"), _file))
-            except FileNotFoundError:
-                LOG.debug("delete file %s failed" % _file)
+            for mounted_dir in self.mounted_dir:
+                device.execute_command_with_timeout(command="fuser -k {}".
+                                                    format(mounted_dir),
+                                                    timeout=2)
+                device.execute_command_with_timeout(command="umount -f "
+                                                            "/storage{}".
+                                                    format(mounted_dir),
+                                                    timeout=2)
+                device.execute_command_with_timeout(command="rm -r /storage{}".
+                                                    format(mounted_dir),
+                                                    timeout=1)
+        else:
+            device.execute_command_with_timeout(command="cd /", timeout=1)
+            for mounted_dir in self.mounted_dir:
+                device.execute_command_with_timeout(command="umount {}".
+                                                    format(mounted_dir),
+                                                    timeout=2)
+                device.execute_command_with_timeout(command="rm -r {}".
+                                                    format(mounted_dir),
+                                                    timeout=1)
 
 
 def copy_file_as_temp(original_file, str_length):
@@ -369,7 +393,10 @@ def mkdir_on_board(device, dir_path):
         device : the L1 board
         dir_path: the dir path to make
     """
-    device.execute_command_with_timeout(command="cd /", timeout=1)
+    if device.__get_device_kernel__() == DeviceLiteKernel.linux_kernel:
+        device.execute_command_with_timeout(command="cd /storage", timeout=1)
+    else:
+        device.execute_command_with_timeout(command="cd /", timeout=1)
     for sub_dir in dir_path.split("/"):
         if sub_dir in ["", "/"]:
             continue
@@ -377,7 +404,10 @@ def mkdir_on_board(device, dir_path):
                                             timeout=1)
         device.execute_command_with_timeout(command="cd {}".format(sub_dir),
                                             timeout=1)
-    device.execute_command_with_timeout(command="cd /", timeout=1)
+    if device.__get_device_kernel__() == DeviceLiteKernel.linux_kernel:
+        device.execute_command_with_timeout(command="cd /storage", timeout=1)
+    else:
+        device.execute_command_with_timeout(command="cd /", timeout=1)
 
 
 def get_mount_dir(mount_dir):
@@ -400,6 +430,13 @@ def get_mount_dir(mount_dir):
     return mount_dir
 
 
+def check_server_file(local_file, target_path):
+    for file_list in glob.glob(os.path.join(target_path, '*.*')):
+        if os.path.basename(local_file) in file_list:
+            return True
+    return False
+
+
 @Plugin(type=Plugin.TEST_KIT, id=CKit.rootfs)
 class RootFsKit(ITestKit):
     def __init__(self):
@@ -420,7 +457,7 @@ class RootFsKit(ITestKit):
                   " hash_file_name:{} device_label:{}" \
                 .format(self.checksum_command, self.hash_file_name,
                         self.device_label)
-            LOG.error(msg)
+            LOG.error(msg, error_no="00108")
             return TypeError(msg)
 
     def __setup__(self, device, **kwargs):
@@ -428,7 +465,8 @@ class RootFsKit(ITestKit):
 
         # check device label
         if not device.label == self.device_label:
-            LOG.error("device label is not match '%s '" % "demo_label")
+            LOG.error("device label is not match '%s '" % "demo_label",
+                      error_no="00108")
             return False
         else:
             report_path = self._get_report_dir()
@@ -436,6 +474,8 @@ class RootFsKit(ITestKit):
 
                 # execute command of checksum
                 device.connect()
+                device.execute_command_with_timeout(
+                    command="cd /", case_type=DeviceTestType.cpp_test_lite)
                 result, _, _ = device.execute_command_with_timeout(
                     command=self.checksum_command,
                     case_type=DeviceTestType.cpp_test_lite)
@@ -451,13 +491,16 @@ class RootFsKit(ITestKit):
                     hash_file_name = "".join((self.hash_file_name, serial))
                 hash_file_path = os.path.join(report_path, hash_file_name)
                 # write result to file
-                with open(hash_file_path, mode="w", encoding="utf-8") \
-                        as hash_file:
+                hash_file_path_open = os.open(hash_file_path, os.O_WRONLY |
+                                              os.O_CREAT | os.O_APPEND, 0o755)
+
+                with os.fdopen(hash_file_path_open, mode="w") as hash_file:
                     hash_file.write(result)
+                    hash_file.flush()
             else:
                 msg = "RootFsKit teardown, log path [%s] not exists!" \
                       % report_path
-                LOG.error(msg)
+                LOG.error(msg, error_no="00440")
                 return False
             return True
 
@@ -484,28 +527,37 @@ class QueryKit(ITestKit):
         setattr(self.mount_kit, "server", get_config_value(
             'server', config, is_list=False, default="NfsServer"))
         self.query = get_config_value('query', config, is_list=False)
+        self.properties = get_config_value('properties', config, is_list=False)
 
         if not self.query:
             msg = "The config for query kit is invalid with query:{}" \
                   .format(self.query)
-            LOG.error(msg)
+            LOG.error(msg, error_no="00108")
             raise TypeError(msg)
 
     def __setup__(self, device, **kwargs):
+        LOG.debug("start query kit setup")
         if device.label != DeviceLabelType.ipcamera:
             return
         request = kwargs.get("request", None)
         if not request:
-            raise ParamError("the request of queryKit is None")
+            raise ParamError("the request of queryKit is None",
+                             error_no="02401")
         self.mount_kit.__setup__(device, request=request)
-        device.execute_command_with_timeout(command="cd /", timeout=0.2)
-        output, _, _ = device.execute_command_with_timeout(
-                          command=".{}".format(self.query), timeout=5)
-        product_param = {}
+        if device.__get_device_kernel__() == DeviceLiteKernel.linux_kernel:
+            device.execute_command_with_timeout(command="cd /storage",
+                                                timeout=0.2)
+            output, _, _ = device.execute_command_with_timeout(
+                command=".{}{}".format("/storage", self.query), timeout=5)
+        else:
+            device.execute_command_with_timeout(command="cd /", timeout=0.2)
+            output, _, _ = device.execute_command_with_timeout(
+                command=".{}".format(self.query), timeout=5)
+        product_info = {}
         for line in output.split("\n"):
-            process_product_params(line, product_param)
-        product_param["version"] = get_test_component_version(request.config)
-        request.product_params = product_param
+            process_product_info(line, product_info)
+        product_info["version"] = get_test_component_version(request.config)
+        request.product_info = product_info
 
     def __teardown__(self, device):
         if device.label != DeviceLabelType.ipcamera:
@@ -515,9 +567,95 @@ class QueryKit(ITestKit):
         device.close()
 
 
-def process_product_params(message, product_params):
+@Plugin(type=Plugin.TEST_KIT, id=CKit.liteshell)
+class LiteShellKit(ITestKit):
+    def __init__(self):
+        self.command_list = []
+        self.tear_down_command = []
+        self.paths = None
+
+    def __check_config__(self, config):
+        self.command_list = get_config_value('run-command', config)
+        self.tear_down_command = get_config_value('teardown-command', config)
+
+    def __setup__(self, device, **kwargs):
+        del kwargs
+        LOG.debug("LiteShellKit setup, device:{}".format(device.device_sn))
+        if len(self.command_list) == 0:
+            LOG.info("No setup_command to run, skipping!")
+            return
+        for command in self.command_list:
+            run_command(device, command)
+
+    def __teardown__(self, device):
+        LOG.debug("LiteShellKit teardown: device:{}".format(device.device_sn))
+        if len(self.tear_down_command) == 0:
+            LOG.info("No teardown_command to run, skipping!")
+            return
+        for command in self.tear_down_command:
+            run_command(device, command)
+
+
+def run_command(device, command):
+    LOG.debug("The command:{} is running".format(command))
+    if command.strip() == "reset":
+        device.reboot()
+    else:
+        device.execute_shell_command(command)
+
+
+@Plugin(type=Plugin.TEST_KIT, id=CKit.liteinstall)
+class LiteAppInstallKit(ITestKit):
+    def __init__(self):
+        self.app_list = ""
+        self.is_clean = ""
+        self.alt_dir = ""
+        self.bundle_name = None
+        self.paths = ""
+        self.signature = False
+
+    def __check_config__(self, options):
+        self.app_list = get_config_value('test-file-name', options)
+        self.is_clean = get_config_value('cleanup-apps', options, False)
+        self.signature = get_config_value('signature', options, False)
+        self.alt_dir = get_config_value('alt-dir', options, False)
+        if self.alt_dir and self.alt_dir.startswith("resource/"):
+            self.alt_dir = self.alt_dir[len("resource/"):]
+        self.paths = get_config_value('paths', options)
+
+    def __setup__(self, device, **kwargs):
+        del kwargs
+        LOG.debug("LiteAppInstallKit setup, device:{}".
+                  format(device.device_sn))
+        if len(self.app_list) == 0:
+            LOG.info("No app to install, skipping!")
+            return
+
+        for app in self.app_list:
+            if app.endswith(".hap"):
+                device.execute_command_with_timeout("cd /", timeout=1)
+                if self.signature:
+                    device.execute_command_with_timeout(
+                        command="./bin/bm set -d enable", timeout=10)
+                else:
+                    device.execute_command_with_timeout(
+                        command="./bin/bm set -s disable", timeout=10)
+
+                device.execute_command_with_timeout(
+                    "./bin/bm install -p %s" % app, timeout=60)
+
+    def __teardown__(self, device):
+        LOG.debug("LiteAppInstallKit teardown: device:{}".format(
+            device.device_sn))
+        if self.is_clean and str(self.is_clean).lower() == "true" \
+                and self.bundle_name:
+            device.execute_command_with_timeout(
+                "./bin/bm uninstall -n %s" % self.bundle_name, timeout=90)
+
+
+def process_product_info(message, product_info):
     if "The" in message:
         message = message[message.index("The"):]
         items = message[len("The "):].split(" is ")
-        product_params.setdefault(items[0].strip(),
-                                  items[1].strip().strip("[").strip("]"))
+        product_info.setdefault(items[0].strip(),
+                                items[1].strip().strip("[").strip("]"))

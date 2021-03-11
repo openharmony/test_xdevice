@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -26,6 +26,7 @@ from xml.etree import ElementTree
 from _core.logger import platform_logger
 from _core.report.encrypt import check_pub_key_exist
 from _core.report.encrypt import do_rsa_encrypt
+from _core.exception import ParamError
 
 LOG = platform_logger("ReporterHelper")
 
@@ -37,13 +38,13 @@ class ReportConstant:
     summary_vision_report = "summary_report.html"
     details_vision_report = "details_report.html"
     failures_vision_report = "failures_report.html"
+    task_info_record = "task_info.record"
     summary_ini = "summary.ini"
     summary_report_hash = "summary_report.hash"
     title_name = "title_name"
     summary_title = "Summary Report"
     details_title = "Details Report"
     failures_title = "Failures Report"
-    decc_mode = "decc"
 
     # exec_info constants
     platform = "platform"
@@ -56,9 +57,11 @@ class ReportConstant:
     execute_time = "execute_time"
 
     # summary constants
-    product_params = "product_params"
+    product_info = "productinfo"
+    product_info_ = "product_info"
     modules = "modules"
-    modules_done = "modules_done"
+    run_modules = "runmodules"
+    run_modules_ = "run_modules"
     name = "name"
     time = "time"
     total = "total"
@@ -73,7 +76,8 @@ class ReportConstant:
     message = "message"
 
     # case result constants
-    module = "module"
+    module_name = "modulename"
+    module_name_ = "module_name"
     result = "result"
     status = "status"
     run = "run"
@@ -87,8 +91,8 @@ class ReportConstant:
 
     # time constants
     time_stamp = "timestamp"
-    start_time = "start_time"
-    end_time = "end_time"
+    start_time = "starttime"
+    end_time = "endtime"
     time_format = "%Y-%m-%d %H:%M:%S"
 
     # xml tag constants
@@ -117,14 +121,17 @@ class DataHelper:
 
     @staticmethod
     def parse_data_report(data_report):
-        if os.path.exists(data_report):
-            with open(data_report, 'r', encoding='UTF-8') as file_content:
+        if "<" not in data_report and os.path.exists(data_report):
+            with open(data_report, 'r', encoding='UTF-8', errors="ignore") as \
+                    file_content:
                 data_str = file_content.read()
         else:
             data_str = data_report
 
-        data_str = data_str.replace(chr(2), "").replace(chr(15), "") \
-            .replace(chr(16), "").replace(chr(1), "")
+        for char_index in range(32):
+            if char_index in [10, 13]:  # chr(10): LF, chr(13): CR
+                continue
+            data_str = data_str.replace(chr(char_index), "")
         try:
             return ElementTree.fromstring(data_str)
         except SyntaxError as error:
@@ -157,9 +164,22 @@ class DataHelper:
                                     self.LINE_BREAK_INDENT + self.INDENT, "")
 
     @classmethod
-    def get_summary_result(cls, report_path, file_name, key=None,
-                           reverse=False):
-        data_reports = cls._get_data_reports(report_path)
+    def update_suite_result(cls, suite, case):
+        update_time = round(float(suite.get(
+            ReportConstant.time, 0)) + float(
+            case.get(ReportConstant.time, 0)), 3)
+        suite.set(ReportConstant.time, str(update_time))
+        update_tests = str(int(suite.get(ReportConstant.tests, 0))+1)
+        suite.set(ReportConstant.tests, update_tests)
+        if case.findall('failure'):
+            update_failures = str(int(suite.get(ReportConstant.failures, 0))+1)
+            suite.set(ReportConstant.failures, update_failures)
+
+    @classmethod
+    def get_summary_result(cls, report_path, file_name, key=None, **kwargs):
+        reverse = kwargs.get("reverse", False)
+        file_prefix = kwargs.get("file_prefix", None)
+        data_reports = cls._get_data_reports(report_path, file_prefix)
         if not data_reports:
             return
         if key:
@@ -171,30 +191,47 @@ class DataHelper:
                                   ReportConstant.unavailable]
         for data_report in data_reports:
             data_report_element = cls.parse_data_report(data_report)
+            if not len(list(data_report_element)):
+                continue
             if not summary_result:
                 summary_result = data_report_element
                 continue
-            summary_testsuite = summary_result[0]
-            data_testsuite = data_report_element[0]
-            cls._update_attributes(summary_testsuite, data_testsuite,
-                                   need_update_attributes)
-            for element in data_testsuite:
-                summary_testsuite.append(element)
-
-        need_update_attributes.append(ReportConstant.time)
-        for attribute in need_update_attributes:
-            summary_result.set(attribute, summary_result[0].get(attribute))
-
-        cls.generate_report(summary_result, file_name)
+            if not summary_result or not data_report_element:
+                continue
+            for data_suite in data_report_element:
+                for summary_suite in summary_result:
+                    if data_suite.get("name", None) == \
+                            summary_suite.get("name", None):
+                        for data_case in data_suite:
+                            for summary_case in summary_suite:
+                                if data_case.get("name", None) == \
+                                        summary_case.get("name", None):
+                                    break
+                            else:
+                                summary_suite.append(data_case)
+                                DataHelper.update_suite_result(summary_result,
+                                                               data_case)
+                                DataHelper.update_suite_result(summary_suite,
+                                                               data_case)
+                        break
+                else:
+                    summary_result.append(data_suite)
+                    DataHelper._update_attributes(summary_result, data_suite,
+                                                  need_update_attributes)
+        if summary_result:
+            cls.generate_report(summary_result, file_name)
+        return summary_result
 
     @classmethod
-    def _get_data_reports(cls, report_path):
+    def _get_data_reports(cls, report_path, file_prefix=None):
         if not os.path.isdir(report_path):
             return []
         data_reports = []
         for root, _, files in os.walk(report_path):
             for file_name in files:
                 if not file_name.endswith(cls.DATA_REPORT_SUFFIX):
+                    continue
+                if file_prefix and not file_name.startswith(file_prefix):
                     continue
                 data_reports.append(os.path.join(root, file_name))
         return data_reports
@@ -209,16 +246,26 @@ class DataHelper:
         # update time
         updated_time = round(float(summary_element.get(
             ReportConstant.time, 0)) + float(
-            summary_element.get(ReportConstant.time, 0)), 3)
+            data_element.get(ReportConstant.time, 0)), 3)
         summary_element.set(ReportConstant.time, str(updated_time))
 
     @staticmethod
     def generate_report(element, file_name):
         if check_pub_key_exist():
             plain_text = DataHelper.to_string(element)
-            cipher_text = do_rsa_encrypt(plain_text)
-            with open(file_name, "wb") as file_handler:
+            try:
+                cipher_text = do_rsa_encrypt(plain_text)
+            except ParamError as error:
+                LOG.error(error, error_no=error.error_no)
+                cipher_text = b""
+            if platform.system() == "Windows":
+                flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_BINARY
+            else:
+                flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            file_name_open = os.open(file_name, flags, 0o755)
+            with os.fdopen(file_name_open, "wb") as file_handler:
                 file_handler.write(cipher_text)
+                file_handler.flush()
         else:
             tree = ElementTree.ElementTree(element)
             tree.write(file_name, encoding="UTF-8", xml_declaration=True,
@@ -244,7 +291,7 @@ class ExecInfo:
     log_path = ""
     platform = ""
     execute_time = ""
-    product_params = dict()
+    product_info = dict()
 
 
 class Result:
@@ -268,12 +315,12 @@ class Summary:
     keys = [ReportConstant.modules, ReportConstant.total,
             ReportConstant.passed, ReportConstant.failed,
             ReportConstant.blocked, ReportConstant.unavailable,
-            ReportConstant.ignored, ReportConstant.modules_done]
+            ReportConstant.ignored, ReportConstant.run_modules_]
 
     def __init__(self):
         self.result = Result()
         self.modules = None
-        self.modules_done = 0
+        self.run_modules = 0
 
     def get_result(self):
         return self.result
@@ -283,11 +330,11 @@ class Summary:
 
 
 class Suite:
-    keys = [ReportConstant.module, ReportConstant.name, ReportConstant.total,
-            ReportConstant.passed, ReportConstant.failed,
-            ReportConstant.blocked, ReportConstant.ignored,
-            ReportConstant.time]
-    module = ReportConstant.empty_name
+    keys = [ReportConstant.module_name_, ReportConstant.name,
+            ReportConstant.total, ReportConstant.passed,
+            ReportConstant.failed, ReportConstant.blocked,
+            ReportConstant.ignored, ReportConstant.time]
+    module_name = ReportConstant.empty_name
     name = ""
     time = ""
 
@@ -301,14 +348,14 @@ class Suite:
 
     def set_cases(self, element):
         if len(element) == 0:
-            LOG.warning("%s has no testcase",
-                        element.get(ReportConstant.name, ""))
+            LOG.debug("%s has no testcase",
+                      element.get(ReportConstant.name, ""))
             return
 
         # get case context and add to self.cases
         for child in element:
             case = Case()
-            case.module = self.module
+            case.module_name = self.module_name
             for key, value in child.items():
                 setattr(case, key, value)
             if len(child) > 0:
@@ -325,7 +372,7 @@ class Suite:
 
 
 class Case:
-    module = ReportConstant.empty_name
+    module_name = ReportConstant.empty_name
     name = ReportConstant.empty_name
     classname = ReportConstant.empty_name
     status = ""
@@ -405,27 +452,31 @@ class VisionHelper:
                                         "None")
         exec_info.host_info = platform.platform()
         start_time = self.summary_element.get(ReportConstant.start_time, "")
+        if not start_time:
+            start_time = self.summary_element.get("start_time", "")
         end_time = self.summary_element.get(ReportConstant.end_time, "")
+        if not end_time:
+            end_time = self.summary_element.get("end_time", "")
         exec_info.test_time = "%s/ %s" % (start_time, end_time)
         start_time = time.mktime(time.strptime(
             start_time, ReportConstant.time_format))
         end_time = time.mktime(time.strptime(
             end_time, ReportConstant.time_format))
-        exec_info.execute_time = self._get_execute_time(round(
+        exec_info.execute_time = self.get_execute_time(round(
             end_time - start_time, 3))
         exec_info.log_path = os.path.abspath(os.path.join(report_path, "log"))
 
         try:
-            product_params = self.summary_element.get(
-                ReportConstant.product_params, "")
-            if product_params:
-                exec_info.product_params = literal_eval(str(product_params))
+            product_info = self.summary_element.get(
+                ReportConstant.product_info, "")
+            if product_info:
+                exec_info.product_info = literal_eval(str(product_info))
         except SyntaxError as error:
             LOG.error("summary report error: %s", error.args)
         return exec_info
 
     @classmethod
-    def _get_execute_time(cls, second_time):
+    def get_execute_time(cls, second_time):
         hour, day = 0, 0
         second, minute = second_time % 60, second_time // 60
         if minute > 0:
@@ -445,8 +496,8 @@ class VisionHelper:
         summary = Summary()
         summary.modules = self.summary_element.get(
             ReportConstant.modules, 0)
-        summary.modules_done = self.summary_element.get(
-            ReportConstant.modules_done, 0)
+        summary.run_modules = self.summary_element.get(
+            ReportConstant.run_modules, 0)
         summary.result.total = int(self.summary_element.get(
             ReportConstant.tests, 0))
         summary.result.failed = int(
@@ -466,8 +517,8 @@ class VisionHelper:
         suites = []
         for child in self.summary_element:
             suite = Suite()
-            suite.module = child.get(ReportConstant.module,
-                                     ReportConstant.empty_name)
+            suite.module_name = child.get(ReportConstant.module_name,
+                                          ReportConstant.empty_name)
             suite.name = child.get(ReportConstant.name, "")
             suite.message = child.get(ReportConstant.message, "")
             suite.result.total = int(child.get(ReportConstant.tests)) if \
@@ -526,34 +577,39 @@ class VisionHelper:
             value = self._get_hidden_style_value(getattr(
                 exec_info, key, "None"))
             file_context = self._render_key(prefix, key, value, file_context)
-        file_context = self._render_product_params(exec_info, file_context,
-                                                   prefix)
+        file_context = self._render_product_info(exec_info, file_context,
+                                                 prefix)
         return file_context
 
-    def _render_product_params(self, exec_info, file_context, prefix):
-        """construct product params context and render it to file context
-        product params sample:
+    def _render_product_info(self, exec_info, file_context, prefix):
+        """construct product info context and render it to file context
+
+        rendered product info sample:
             <tr>
                 <td class="normal first">key:</td>
                 <td class="normal second">value</td>
                 <td class="normal third">key:</td>
                 <td class="normal fourth">value</td>
             </tr>
+
+        Args:
+            exec_info: dict that used to update file_content
+            file_context: exist html content
+            prefix: target replace prefix key
+
+        Returns:
+            updated file context that includes rendered product info
         """
         row_start = True
         try:
-            keys = list(exec_info.product_params.keys())
+            keys = list(exec_info.product_info.keys())
         except AttributeError:
-            LOG.error("product params error %s", exec_info.product_params)
+            LOG.error("product info error %s", exec_info.product_info)
             keys = []
-        if ReportConstant.log_path_title not in keys:
-            keys.append(ReportConstant.log_path_title)
-        exec_info.product_params[ReportConstant.log_path_title] = \
-            exec_info.log_path
 
         render_value = ""
         for key in keys:
-            value = exec_info.product_params[key]
+            value = exec_info.product_info[key]
             if row_start:
                 render_value = "%s<tr>\n" % render_value
             render_value = "{}{}".format(
@@ -563,9 +619,8 @@ class VisionHelper:
             row_start = not row_start
         if not row_start:
             render_value = "%s</tr>\n" % render_value
-        file_context = self._render_key(prefix, ReportConstant.product_params,
+        file_context = self._render_key(prefix, ReportConstant.product_info_,
                                         render_value, file_context)
-        exec_info.product_params.pop(ReportConstant.log_path_title)
         return file_context
 
     def _get_exec_info_td(self, key, value, row_start):
@@ -646,7 +701,7 @@ class VisionHelper:
                 <th class="normal operate">Operate</th>
             </tr>
             <tr [class="background-color"]>
-                <td class="normal module">base</td>
+                <td class="normal module">{suite.module_name}</td>
                 <td class="normal test-suite">{suite.name}</td>
                 <td class="normal total">{suite.result.total}</td>
                 <td class="normal passed">{suite.result.passed}</td>
@@ -735,14 +790,14 @@ class VisionHelper:
             <tr>
                 <th class="normal module">Module</th>
                 <th class="normal test-suite">Testsuite</th>
-                <th class="normal test">Test</th>
+                <th class="normal test">Testcase</th>
                 <th class="normal time">Time</th>
                 <th class="normal status"><div class="circle-normal
                     circle-white"></div></th>
                 <th class="normal result">Result</th>
             </tr>
             <tr [class="background-color"]>
-                <td class="normal module">{case.module}</td>
+                <td class="normal module">{case.module_name}</td>
                 <td class="normal test-suite">{case.classname}</td>
                 <td class="normal test">{case.name}</td>
                 <td class="normal time">{case.time}</td>
@@ -794,8 +849,8 @@ class VisionHelper:
             "  <td class='normal status'>"
             "<div class='circle-normal circle-%s'></div></td>\n"
             "  <td class='normal result'>%s</td>\n"
-            "</tr>\n" % (case.module, case.classname, case.name, case.time,
-                         result, rendered_result))
+            "</tr>\n" % (case.module_name, case.classname, case.name,
+                         case.time, result, rendered_result))
         return case_td_context
 
     @classmethod
@@ -811,7 +866,7 @@ class VisionHelper:
             "<tr>\n" \
             "  <th class='normal module'>Module</th>\n" \
             "  <th class='normal test-suite'>Testsuite</th>\n" \
-            "  <th class='normal test'>Test</th>\n" \
+            "  <th class='normal test'>Testcase</th>\n" \
             "  <th class='normal time'>Time</th>\n" \
             "  <th class='normal status'><div class='circle-normal " \
             "circle-white'></div></th>\n" \
@@ -841,10 +896,10 @@ class VisionHelper:
             </tr>
             <tr [class="background-color"]>
                 <td class="normal test" id="{suite.name}">
-                    {suite.module}#{suite.name}</td>
+                    {suite.module_name}#{suite.name}</td>
                 or
                 <td class="normal test" id="{suite.name}.{case.name}">
-                    {case.module}#{case.classname}#{case.name}</td>
+                    {case.module_name}#{case.classname}#{case.name}</td>
                 <td class="normal status"><div class="circle-normal
                     circle-{case.result/status}"></div></td>
                 <td class="normal result">{case.result/status}</td>
@@ -896,17 +951,18 @@ class VisionHelper:
         failure_case_td_context = "<tr>\n" if index % 2 == 0 else \
             "<tr class='background-color'>\n"
         if result == ReportConstant.unavailable:
-            test_context = "%s#%s" % (case.module, case.name)
+            test_context = "%s#%s" % (case.module_name, case.name)
             href_id = suite_name
         else:
             test_context = \
-                "%s#%s#%s" % (case.module, case.classname, case.name)
+                "%s#%s#%s" % (case.module_name, case.classname, case.name)
             href_id = "%s.%s" % (suite_name, case.name)
         details_context = case.message
         if details_context:
             details_context = str(details_context).replace("<", "&lt;"). \
                 replace(">", "&gt;").replace("\\r\\n", "<br/>"). \
-                replace("\\n", "<br/>").replace("\n", "<br/>")
+                replace("\\n", "<br/>").replace("\n", "<br/>"). \
+                replace(" ", "&nbsp;")
         failure_case_td_context = "{}{}".format(
             failure_case_td_context,
             "  <td class='normal test' id='%s'>%s</td>\n"
@@ -943,11 +999,21 @@ class VisionHelper:
 
     @staticmethod
     def generate_report(summary_vision_path, report_context):
-        vision_file = open(summary_vision_path, "wb")
+        if platform.system() == "Windows":
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_BINARY
+        else:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        vision_file_open = os.open(summary_vision_path, flags, 0o755)
+        vision_file = os.fdopen(vision_file_open, "wb")
         if check_pub_key_exist():
-            cipher_text = do_rsa_encrypt(report_context)
+            try:
+                cipher_text = do_rsa_encrypt(report_context)
+            except ParamError as error:
+                LOG.error(error, error_no=error.error_no)
+                cipher_text = b""
             vision_file.write(cipher_text)
         else:
-            vision_file.write(bytes(report_context, "utf-8"))
+            vision_file.write(bytes(report_context, "utf-8", "ignore"))
+        vision_file.flush()
         vision_file.close()
         LOG.info("generate vision report: %s", summary_vision_path)

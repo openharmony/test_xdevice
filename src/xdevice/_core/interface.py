@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -21,7 +21,7 @@ from abc import abstractmethod
 from enum import Enum
 
 __all__ = ["LifeCycle", "IDevice", "IDriver", "IListener", "IShellReceiver",
-           "IParser", "ITestKit", "IScheduler", "IDeviceManager"]
+           "IParser", "ITestKit", "IScheduler", "IDeviceManager", "IReporter"]
 
 
 class LifeCycle(Enum):
@@ -49,6 +49,7 @@ class IDeviceManager(ABC):
     Class managing the set of different types of devices for testing
     """
     __slots__ = ()
+    support_labels = []
 
     @abstractmethod
     def apply_device(self, device_option, timeout=10):
@@ -64,6 +65,18 @@ class IDeviceManager(ABC):
             return _check_methods(class_info, "__serial__")
         return NotImplemented
 
+    @abstractmethod
+    def init_environment(self, environment, user_config_file):
+        pass
+
+    @abstractmethod
+    def env_stop(self):
+        pass
+
+    @abstractmethod
+    def list_devices(self):
+        pass
+
 
 class IDevice(ABC):
     """
@@ -71,6 +84,7 @@ class IDevice(ABC):
     devices
     """
     __slots__ = ()
+    extend_value = {}
 
     @abstractmethod
     def __set_serial__(self, device_sn=""):
@@ -85,6 +99,16 @@ class IDevice(ABC):
         if cls is IDevice:
             return _check_methods(class_info, "__serial__")
         return NotImplemented
+
+    @abstractmethod
+    def get(self, key=None, default=None):
+        if not key:
+            return default
+        value = getattr(self, key, None)
+        if value:
+            return value
+        else:
+            return self.extend_value.get(key, default)
 
 
 class IDriver(ABC):
@@ -305,4 +329,21 @@ class ITestKit(ABC):
         if cls is ITestKit:
             return _check_methods(class_info, "__check_config__", "__setup__",
                                   "__teardown__")
+        return NotImplemented
+
+
+class IReporter(ABC):
+    """
+    A reporter to generate reports
+    """
+    __slots__ = ()
+
+    @abstractmethod
+    def __generate_reports__(self, report_path, **kwargs):
+        pass
+
+    @classmethod
+    def __subclasshook__(cls, class_info):
+        if cls is IReporter:
+            return _check_methods(class_info, "__generate_reports__")
         return NotImplemented

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,6 +22,9 @@ from dataclasses import dataclass
 
 from _core.exception import ParamError
 from _core.logger import platform_logger
+from _core.utils import get_local_ip
+
+from xdevice_adapter.constants import UsbConst
 
 __all__ = ["UserConfigManager"]
 LOG = platform_logger("ConfigManager")
@@ -35,37 +38,42 @@ class ConfigFileConst(object):
 class UserConfigManager(object):
     def __init__(self, config_file="", env=""):
         from xdevice import Variables
-        if config_file:
-            pass
         try:
             if env:
                 self.config_content = ET.fromstring(env)
             else:
-                user_path = os.path.join(Variables.exec_dir, "config")
-                top_user_path = os.path.join(Variables.top_dir, "config")
-                config_path = os.path.join(Variables.res_dir, "config")
-                paths = [user_path, top_user_path, config_path]
+                if config_file:
+                    self.file_path = config_file
+                else:
+                    user_path = os.path.join(Variables.exec_dir, "config")
+                    top_user_path = os.path.join(Variables.top_dir, "config")
+                    config_path = os.path.join(Variables.res_dir, "config")
+                    paths = [user_path, top_user_path, config_path]
 
-                for path in paths:
-                    if os.path.exists(os.path.abspath(os.path.join(
-                            path, ConfigFileConst.userconfig_filepath))):
-                        self.file_path = os.path.abspath(os.path.join(
-                            path, ConfigFileConst.userconfig_filepath))
-                        break
+                    for path in paths:
+                        if os.path.exists(os.path.abspath(os.path.join(
+                                path, ConfigFileConst.userconfig_filepath))):
+                            self.file_path = os.path.abspath(os.path.join(
+                                path, ConfigFileConst.userconfig_filepath))
+                            break
 
+                LOG.debug("user config path: %s" % self.file_path)
                 if os.path.exists(self.file_path):
                     tree = ET.parse(self.file_path)
                     self.config_content = tree.getroot()
                 else:
-                    raise ParamError("config file not found")
+                    raise ParamError("%s not found" % self.file_path,
+                                     error_no="00115")
 
         except SyntaxError as error:
             if env:
                 raise ParamError(
-                    "Parse environment parameter fail! Error: %s" % error.args)
+                    "Parse environment parameter fail! Error: %s" % error.args,
+                    error_no="00115")
             else:
                 raise ParamError(
-                    "Parse %s fail! Error: %s" % (self.file_path, error.args))
+                    "Parse %s fail! Error: %s" % (self.file_path, error.args),
+                    error_no="00115")
 
     def get_user_config_list(self, tag_name):
         data_dic = {}
@@ -94,18 +102,10 @@ class UserConfigManager(object):
                 return []
         return config_list
 
-    def get_sn_list(self):
+    def get_sn_list(self, input_string):
         sn_select_list = []
-        data_dic = {}
-        for node in self.config_content.findall("environment/device"):
-            if node.attrib["type"] != "usb-hdc":
-                continue
-            for sub in node:
-                data_dic[sub.tag] = sub.text if sub.text else ""
-            sn_config = data_dic.get("sn", "")
-            if sn_config:
-                sn_select_list = self._handle_str(sn_config)
-            break
+        if input_string:
+            sn_select_list = self._handle_str(input_string)
         return sn_select_list
 
     def get_remote_config(self):
@@ -114,17 +114,18 @@ class UserConfigManager(object):
 
         if "ip" in data_dic.keys() and "port" in data_dic.keys():
             remote_ip = data_dic.get("ip", "")
-            remote_adb_port = data_dic.get("port", "")
+            remote_port = data_dic.get("port", "")
         else:
             remote_ip = ""
-            remote_adb_port = ""
+            remote_port = ""
 
-        if (not remote_ip) or (not remote_adb_port):
+        if (not remote_ip) or (not remote_port):
             remote_ip = ""
-            remote_adb_port = ""
-
+            remote_port = ""
+        if remote_ip == get_local_ip():
+            remote_ip = "127.0.0.1"
         remote_dic["ip"] = remote_ip
-        remote_dic["port"] = remote_adb_port
+        remote_dic["port"] = remote_port
         return remote_dic
 
     def get_testcases_dir_config(self):
@@ -161,7 +162,7 @@ class UserConfigManager(object):
         devices = []
 
         for node in self.config_content.findall(target_name):
-            if node.attrib["type"] != "com":
+            if node.attrib["type"] != "com" and node.attrib["type"] != "agent":
                 continue
 
             device = [node.attrib]
@@ -172,6 +173,8 @@ class UserConfigManager(object):
                 if sub.text is not None and sub.tag != "serial":
                     data_dic[sub.tag] = sub.text
             if data_dic:
+                if data_dic.get("ip", "") == get_local_ip():
+                    data_dic["ip"] = "127.0.0.1"
                 device.append(data_dic)
                 devices.append(device)
                 continue
@@ -189,18 +192,21 @@ class UserConfigManager(object):
         return devices
 
     def get_device(self, target_name):
-        data_dic = {}
-
         for node in self.config_content.findall(target_name):
-            if node.attrib["type"] != "usb-hdc":
+            data_dic = {}
+            if node.attrib["type"] != "usb-hdc" and \
+                    node.attrib["type"] != UsbConst.connector_type:
                 continue
+            data_dic["usb_type"] = node.attrib["type"]
             for sub in node:
                 if sub.text is None:
                     data_dic[sub.tag] = ""
                 else:
                     data_dic[sub.tag] = sub.text
-            break
-        return data_dic
+            if data_dic.get("ip", "") == get_local_ip():
+                data_dic["ip"] = "127.0.0.1"
+            return data_dic
+        return None
 
     def get_testcases_dir(self):
         from xdevice import Variables
@@ -226,3 +232,15 @@ class UserConfigManager(object):
 
         return os.path.abspath(
             os.path.join(Variables.exec_dir, "resource"))
+
+    def get_log_level(self):
+        data_dic = {}
+        node = self.config_content.find("loglevel")
+        if node is not None:
+            if node.find("console") is None and node.find("file") is None:
+                # neither loglevel/console nor loglevel/file exists
+                data_dic.update({"console": str(node.text).strip()})
+            else:
+                for child in node:
+                    data_dic.update({child.tag: str(child.text).strip()})
+        return data_dic

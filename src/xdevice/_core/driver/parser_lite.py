@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,6 +19,7 @@
 import copy
 import re
 import time
+import datetime
 from queue import Queue
 
 from _core.interface import IParser
@@ -52,8 +53,7 @@ _CTEST_SUITE_TIME_RUN_TAG = "Run test suite "
 _CTEST_SETUP_TAG = "setup"
 _CTEST_RUN_TAG = "-----------------------"
 
-_TEST_PASSED_LOWER = "test pass"
-_TESTS_PASSED_LOWER = "tests pass"
+_TEST_PASSED_LOWER = "pass"
 
 _COMPILE_PASSED = "compile PASSED"
 _COMPILE_PARA = r"(.* compile .*)"
@@ -61,6 +61,14 @@ _COMPILE_PARA = r"(.* compile .*)"
 _PRODUCT_PARA = r"(.*The .* is .*)"
 _PRODUCT_PARA_START = r"To Obtain Product Params Start"
 _PRODUCT_PARA_END = r"To Obtain Product Params End"
+
+_START_JSUNIT_RUN_MARKER = "[start] start run suites"
+_START_JSUNIT_SUITE_RUN_MARKER = "[suite start]"
+_START_JSUNIT_SUITE_END_MARKER = "[suite end]"
+_END_JSUNIT_RUN_MARKER = "[end] run suites end"
+_PASS_JSUNIT_MARKER = "[%s]" % "pass"
+_FAIL_JSUNIT_MARKER = "[fail]"
+_ACE_LOG_MARKER = "[Console Info]"
 
 LOG = platform_logger("ParserLite")
 
@@ -71,7 +79,7 @@ class CppTestParserLite(IParser):
         self.state_machine = StateRecorder()
         self.suite_name = ""
         self.listeners = []
-        self.product_params = {}
+        self.product_info = {}
         self.is_params = False
 
     def get_suite_name(self):
@@ -103,24 +111,24 @@ class CppTestParserLite(IParser):
             suites = copy.copy(suites_result)
             listener.__ended__(LifeCycle.TestSuites, test_result=suites,
                                suites_name=suites.suites_name,
-                               product_params=suites.product_params)
+                               product_info=suites.product_info)
         self.state_machine.current_suites = None
 
     @staticmethod
     def _is_test_run(line):
-        return True if line.startswith(_TEST_RUN_TAG) else False
+        return True if _TEST_RUN_TAG in line else False
 
     @staticmethod
     def _is_test_start_run(line):
-        return True if line.startswith(_TEST_START_RUN_TAG) else False
+        return True if _TEST_START_RUN_TAG in line else False
 
     @staticmethod
     def _is_informational_start(line):
-        return True if line.startswith(_INFORMATIONAL_START) else False
+        return True if _INFORMATIONAL_START in line else False
 
     @staticmethod
     def _is_test_start(line):
-        return True if line.startswith(_TEST_START_TAG) else False
+        return True if _TEST_START_TAG in line else False
 
     def _process_informational_line(self, line):
         pattern = r"(.*) (\(\d+ ms total\))"
@@ -142,18 +150,18 @@ class CppTestParserLite(IParser):
         elif _PRODUCT_PARA_END in line:
             self.is_params = False
         if re.match(_PRODUCT_PARA, line) and self.is_params:
-            handle_product_params(line, self.product_params)
+            handle_product_info(line, self.product_info)
 
         if self.state_machine.suites_is_started() or self._is_test_run(line):
             if self._is_test_start_run(line):
-                message = line[len(_TEST_RUN_TAG):].strip()
-                self.handle_suites_started_tag(message)
+                self.handle_suites_started_tag(line)
             elif self._is_informational_start(line):
                 self._process_informational_line(line)
             elif self._is_test_run(line):
                 self._process_test_run_line(line)
             elif self._is_test_start(line):
-                message = line[len(_TEST_START_TAG):].strip()
+                message = line[line.index(_TEST_START_TAG) +
+                               len(_TEST_START_TAG):].strip()
                 self.handle_test_started_tag(message)
             else:
                 self.process_test(line)
@@ -165,7 +173,7 @@ class CppTestParserLite(IParser):
             if not self.state_machine.test_is_running():
                 LOG.error(
                     "Found {} without {} before, wrong GTest log format".
-                        format(line, _TEST_START_TAG))
+                        format(line, _TEST_START_TAG), error_no="00405")
                 return
             self.handle_test_ended_tag(message, ResultCode.SKIPPED)
         elif _TEST_OK_TAG in line:
@@ -174,7 +182,7 @@ class CppTestParserLite(IParser):
             if not self.state_machine.test_is_running():
                 LOG.error(
                     "Found {} without {} before, wrong GTest log format".
-                        format(line, _TEST_START_TAG))
+                        format(line, _TEST_START_TAG), error_no="00405")
                 return
             self.handle_test_ended_tag(message, ResultCode.PASSED)
         elif _ALT_OK_TAG in line:
@@ -210,13 +218,13 @@ class CppTestParserLite(IParser):
     @classmethod
     def parse_test_description(cls, message):
         run_time = 0
-        matcher = re.match(r'(.*) \((\d+) ms\)', message)
+        matcher = re.match(r'(.*) \((\d+) ms\)(.*)', message)
         if matcher:
             test_class, test_name = matcher.group(1).rsplit(".", 1)
             run_time = int(matcher.group(2))
         else:
             test_class, test_name = message.rsplit(".", 1)
-        return test_class, test_name, run_time
+        return test_class.split(" ")[-1], test_name.split(" ")[0], run_time
 
     def handle_test_ended_tag(self, message, test_status):
         test_class, test_name, run_time = self.parse_test_description(
@@ -226,18 +234,21 @@ class CppTestParserLite(IParser):
         test_result.code = test_status.value
         if not test_result.is_running():
             LOG.error(
-                "Test has no start tag when trying to end test: %s", message)
+                "Test has no start tag when trying to end test: %s", message,
+                error_no="00405")
             return
         found_unexpected_test = False
         if test_result.test_class != test_class:
             LOG.error(
                 "Expected class: {} but got:{} ".format(test_result.test_class,
-                                                        test_class))
+                                                        test_class),
+                error_no="00405")
             found_unexpected_test = True
         if test_result.test_name != test_name:
             LOG.error(
                 "Expected test: {} but got: {}".format(test_result.test_name,
-                                                       test_name))
+                                                       test_name),
+                error_no="00405")
             found_unexpected_test = True
         test_result.current = self.state_machine.running_test_index + 1
         self.state_machine.test().is_completed = True
@@ -255,13 +266,13 @@ class CppTestParserLite(IParser):
 
     def handle_suites_started_tag(self, message):
         self.state_machine.get_suites(reset=True)
-        matcher = re.match(r'Running (\d+) test[s]? from .*', message)
+        matcher = re.match(r'.* Running (\d+) test[s]? from .*', message)
         expected_test_num = int(matcher.group(1)) if matcher else -1
         if expected_test_num >= 0:
             test_suites = self.state_machine.get_suites()
             test_suites.suites_name = self.get_suite_name()
             test_suites.test_num = expected_test_num
-            test_suites.product_params = self.product_params
+            test_suites.product_info = self.product_info
             for listener in self.get_listeners():
                 suite_report = copy.copy(test_suites)
                 listener.__started__(LifeCycle.TestSuites, suite_report)
@@ -299,7 +310,7 @@ class CppTestParserLite(IParser):
             copy_suites = copy.copy(suites)
             listener.__ended__(LifeCycle.TestSuites, test_result=copy_suites,
                                suites_name=suites.suites_name,
-                               product_params=suites.product_params)
+                               product_info=suites.product_info)
 
     def append_test_output(self, message):
         if self.state_machine.test().stacktrace:
@@ -409,7 +420,7 @@ class CppTestListParserLite(IParser):
         if not self.last_test_class_name:
             LOG.error(
                 "parsed new test case name %s but no test class"
-                " name has been set" % line)
+                " name has been set" % line, error_no="00405")
         else:
             test = TestDescription(self.last_test_class_name,
                                    self.method_result.group(1))
@@ -521,7 +532,7 @@ class CTestParser(IParser):
         self.state_machine = StateRecorder()
         self.suites_name = ""
         self.listeners = []
-        self.product_params = {}
+        self.product_info = {}
         self.is_params = False
 
     def get_suite_name(self):
@@ -543,7 +554,7 @@ class CTestParser(IParser):
         for listener in self.get_listeners():
             listener.__ended__(LifeCycle.TestSuites, test_result=suites,
                                suites_name=suites.suites_name,
-                               product_params=suites.product_params)
+                               product_info=suites.product_info)
         self.state_machine.current_suites = None
 
     @staticmethod
@@ -556,7 +567,7 @@ class CTestParser(IParser):
 
     @staticmethod
     def _is_ctest_run(line):
-        return True if line.endswith(_CTEST_RUN_TAG) else False
+        return re.match(r".*(\d+ Tests \d+ Failures \d+ Ignored).*", line)
 
     def _is_ctest_suite_test_run(self, line):
         return re.match("{}{}".format(self.pattern, _CTEST_SUITE_TEST_RUN_TAG),
@@ -578,13 +589,13 @@ class CTestParser(IParser):
             r"(.*" + "\\.c:" + "\\d+:.*:(PASS|FAIL|OK|IGNORE"")\\.*)",
             line.strip())
 
+    @staticmethod
+    def _is_result_line(line):
+        return line.find("PASS") != -1 or line.find("FAIL") != -1 or line.find(
+            "IGNORE") != -1
+
     def parse(self, line):
-        if _PRODUCT_PARA_START in line:
-            self.is_params = True
-        elif _PRODUCT_PARA_END in line:
-            self.is_params = False
-        if self.is_params and re.match(_PRODUCT_PARA, line):
-            handle_product_params(line, self.product_params)
+        self._parse_product_info(line)
 
         if self.state_machine.suites_is_started() or \
                 self._is_ctest_start_test_run(line):
@@ -594,19 +605,55 @@ class CTestParser(IParser):
                 elif self._is_ctest_end_test_run(line):
                     self.process_suites_ended_tag()
                 elif self._is_ctest_run(line):
-                    self.handle_suite_ended_tag()
+                    self.handle_suite_ended_tag(line)
                 elif self._is_ctest_suite_test_run(line) and \
                         not self.state_machine.suite_is_running():
                     self._process_ctest_suite_test_run_line(line)
                 elif self.is_ctest_suite_time_run(line) and \
                         not self.state_machine.suite_is_running():
                     self.handle_suite_started_tag(line)
-                elif line.find(":") != -1 and line.count(":") >= 3:
-                    if self._is_execute_result_line(line):
-                        self.handle_one_test_tag(line.strip())
+                elif self._is_result_line(line) and \
+                        self.state_machine.suite_is_running():
+                    if line.find(":") != -1 and line.count(
+                            ":") >= 3 and self._is_execute_result_line(line):
+                        self.handle_one_test_tag(line.strip(), False)
+                    else:
+                        self.handle_one_test_tag(line.strip(), True)
             except AttributeError:
-                LOG.error("parsing log: %s failed" % (line.strip()))
+                LOG.error("parsing log: %s failed" % (line.strip()),
+                          error_no="00405")
             self.last_line = line
+
+    def _parse_product_info(self, line):
+        if _PRODUCT_PARA_START in line:
+            self.is_params = True
+        elif _PRODUCT_PARA_END in line:
+            self.is_params = False
+        if self.is_params and re.match(_PRODUCT_PARA, line):
+            handle_product_info(line, self.product_info)
+
+    def parse_error_test_description(self, message):
+        end_time = re.match(self.pattern, message).group().strip()
+        start_time = re.match(self.pattern,
+                              self.last_line.strip()).group().strip()
+        start_timestamp = int(time.mktime(
+            time.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f"))) * 1000 + int(
+            start_time.split(".")[-1])
+        end_timestamp = int(time.mktime(
+            time.strptime(end_time, "%Y-%m-%d %H:%M:%S.%f"))) * 1000 + int(
+            end_time.split(".")[-1])
+        run_time = end_timestamp - start_timestamp
+        status_dict = {"PASS": ResultCode.PASSED, "FAIL": ResultCode.FAILED,
+                       "IGNORE": ResultCode.SKIPPED}
+        status = ""
+        if message.find("PASS") != -1:
+            status = "PASS"
+        elif message.find("FAIL") != -1:
+            status = "FAIL"
+        elif message.find("IGNORE") != -1:
+            status = "IGNORE"
+        status = status_dict.get(status)
+        return "", "", status, run_time
 
     def parse_test_description(self, message):
 
@@ -629,9 +676,13 @@ class CTestParser(IParser):
         status = status_dict.get(status)
         return test_class, test_name, status, run_time
 
-    def handle_one_test_tag(self, message):
-        test_class, test_name, status, run_time = \
-            self.parse_test_description(message)
+    def handle_one_test_tag(self, message, is_error):
+        if is_error:
+            test_class, test_name, status, run_time = \
+                self.parse_error_test_description(message)
+        else:
+            test_class, test_name, status, run_time = \
+                self.parse_test_description(message)
         test_result = self.state_machine.test(reset=True)
         test_result.test_class = test_class
         test_result.test_name = test_name
@@ -660,7 +711,7 @@ class CTestParser(IParser):
         elif ResultCode.SKIPPED == status:
             for listener in self.get_listeners():
                 result = copy.copy(test_result)
-                listener.__skipped__(LifeCycle.TestCase, result)
+                listener.__failed__(LifeCycle.TestCase, result)
 
         self.state_machine.test().is_completed = True
         test_suite.test_num += 1
@@ -674,7 +725,7 @@ class CTestParser(IParser):
         self.state_machine.get_suites(reset=True)
         test_suites = self.state_machine.get_suites()
         test_suites.suites_name = self.suites_name
-        test_suites.product_params = self.product_params
+        test_suites.product_info = self.product_info
         test_suites.test_num = 0
         for listener in self.get_listeners():
             suite_report = copy.copy(test_suites)
@@ -692,7 +743,7 @@ class CTestParser(IParser):
             suite_report = copy.copy(test_suite)
             listener.__started__(LifeCycle.TestSuite, suite_report)
 
-    def handle_suite_ended_tag(self):
+    def handle_suite_ended_tag(self, line):
         suite_result = self.state_machine.suite()
         suites = self.state_machine.get_suites()
         suite_result.run_time = suite_result.run_time
@@ -711,7 +762,7 @@ class CTestParser(IParser):
         for listener in self.get_listeners():
             listener.__ended__(LifeCycle.TestSuites, test_result=suites,
                                suites_name=suites.suites_name,
-                               product_params=suites.product_params)
+                               product_info=suites.product_info)
 
     def append_test_output(self, message):
         if self.state_machine.test().stacktrace:
@@ -731,6 +782,7 @@ class OpenSourceParser(IParser):
         self.listeners = []
         self.output = ""
         self.lines = []
+        self.start_time = None
 
     def get_suite_name(self):
         return self.suite_name
@@ -739,6 +791,8 @@ class OpenSourceParser(IParser):
         return self.listeners
 
     def __process__(self, lines):
+        if not self.start_time:
+            self.start_time = datetime.datetime.now()
         self.lines.extend(lines)
 
     def __done__(self):
@@ -758,15 +812,23 @@ class OpenSourceParser(IParser):
             listener.__started__(LifeCycle.TestCase, result)
         for line in self.lines:
             self.output = "{}{}".format(self.output, line)
-            if _TEST_PASSED_LOWER in line.lower() or \
-                    _TESTS_PASSED_LOWER in line.lower():
+            if _TEST_PASSED_LOWER in line.lower():
                 test_result.code = ResultCode.PASSED.value
+                if self.start_time:
+                    end_time = datetime.datetime.now()
+                    run_time = (end_time - self.start_time).total_seconds()
+                    test_result.run_time = int(run_time * 1000)
                 for listener in self.get_listeners():
                     result = copy.copy(test_result)
                     listener.__ended__(LifeCycle.TestCase, result)
                 break
         else:
             test_result.code = ResultCode.FAILED.value
+            test_result.stacktrace = "\\n".join(self.lines)
+            if self.start_time:
+                end_time = datetime.datetime.now()
+                run_time = (end_time - self.start_time).total_seconds()
+                test_result.run_time = int(run_time * 1000)
             for listener in self.get_listeners():
                 result = copy.copy(test_result)
                 listener.__ended__(LifeCycle.TestCase, result)
@@ -789,6 +851,221 @@ class OpenSourceParser(IParser):
             suite = copy.copy(suite_result)
             listener.__ended__(LifeCycle.TestSuite, suite,
                                suite_report=True)
+
+
+@Plugin(type=Plugin.PARSER, id=ParserType.build_only_test)
+class BuildOnlyParser(IParser):
+    def __init__(self):
+        self.state_machine = StateRecorder()
+        self.suite_name = ""
+        self.test_name = ""
+        self.test_num = 0
+        self.listeners = []
+        self.output = ""
+
+    def get_suite_name(self):
+        return self.suite_name
+
+    def get_listeners(self):
+        return self.listeners
+
+    def __process__(self, lines):
+        if not self.state_machine.suites_is_started():
+            self.state_machine.trace_logs.extend(lines)
+        self.handle_suite_started_tag(self.test_num)
+
+        self.state_machine.running_test_index = \
+            self.state_machine.running_test_index + 1
+
+        for line in lines:
+            if re.match(_COMPILE_PARA, line):
+                self.test_name = str(line).split('compile')[0].strip()
+                test_result = self.state_machine.test(reset=True)
+                test_result.run_time = 0
+                test_result.test_class = self.suite_name
+                test_result.test_name = self.test_name
+                for listener in self.get_listeners():
+                    result = copy.copy(test_result)
+                    listener.__started__(LifeCycle.TestCase, result)
+                if _COMPILE_PASSED in line:
+                    test_result.code = ResultCode.PASSED.value
+                    for listener in self.get_listeners():
+                        result = copy.copy(test_result)
+                        listener.__ended__(LifeCycle.TestCase, result)
+                else:
+                    test_result.code = ResultCode.FAILED.value
+                    for listener in self.get_listeners():
+                        result = copy.copy(test_result)
+                        listener.__failed__(LifeCycle.TestCase, result)
+        self.state_machine.test().is_completed = True
+
+    def __done__(self):
+        self.handle_suite_ended_tag()
+
+    def handle_suite_started_tag(self, test_num):
+        test_suite = self.state_machine.suite()
+        if test_num >= 0:
+            test_suite.suite_name = self.suite_name
+            test_suite.test_num = test_num
+            for listener in self.get_listeners():
+                suite_report = copy.copy(test_suite)
+                listener.__started__(LifeCycle.TestSuite, suite_report)
+
+    def handle_suite_ended_tag(self):
+        suite_result = self.state_machine.suite()
+        for listener in self.get_listeners():
+            suite = copy.copy(suite_result)
+            listener.__ended__(LifeCycle.TestSuite, suite,
+                               suite_report=True)
+
+
+@Plugin(type=Plugin.PARSER, id=ParserType.jsuit_test_lite)
+class JSUnitParserLite(IParser):
+    last_line = ""
+    pattern = r"(\d{1,2}-\d{1,2}\s\d{1,2}:\d{1,2}:\d{1,2}\.\d{3}) "
+
+    def __init__(self):
+        self.state_machine = StateRecorder()
+        self.suites_name = ""
+        self.listeners = []
+
+    def get_listeners(self):
+        return self.listeners
+
+    def __process__(self, lines):
+        if not self.state_machine.suites_is_started():
+            self.state_machine.trace_logs.extend(lines)
+        for line in lines:
+            self.parse(line)
+
+    def __done__(self):
+        pass
+
+    def parse(self, line):
+        if (self.state_machine.suites_is_started() or
+            line.find(_START_JSUNIT_RUN_MARKER) != -1) and \
+                line.find(_ACE_LOG_MARKER) != -1:
+            if line.find(_START_JSUNIT_RUN_MARKER) != -1:
+                self.handle_suites_started_tag()
+            elif line.endswith(_END_JSUNIT_RUN_MARKER):
+                self.handle_suites_ended_tag()
+            elif line.find(_START_JSUNIT_SUITE_RUN_MARKER) != -1:
+                self.handle_suite_started_tag(line.strip())
+            elif line.endswith(_START_JSUNIT_SUITE_END_MARKER):
+                self.handle_suite_ended_tag()
+            elif _PASS_JSUNIT_MARKER in line or _FAIL_JSUNIT_MARKER \
+                    in line:
+                self.handle_one_test_tag(line.strip())
+            self.last_line = line
+
+    def parse_test_description(self, message):
+        pattern = r"\[(pass|fail)\]"
+        year = time.strftime("%Y")
+        filter_message = message.split("[Console Info]")[1].strip()
+        end_time = "%s-%s" % \
+                   (year, re.match(self.pattern, message).group().strip())
+        start_time = "%s-%s" % \
+                     (year, re.match(self.pattern,
+                                     self.last_line.strip()).group().strip())
+        start_timestamp = int(time.mktime(
+            time.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f"))) * 1000 + int(
+            start_time.split(".")[-1])
+        end_timestamp = int(time.mktime(
+            time.strptime(end_time, "%Y-%m-%d %H:%M:%S.%f"))) * 1000 + int(
+            end_time.split(".")[-1])
+        run_time = end_timestamp - start_timestamp
+        _, status_end_index = re.match(pattern, filter_message).span()
+        status = filter_message[:status_end_index]
+        test_name = filter_message[status_end_index:]
+        status_dict = {"pass": ResultCode.PASSED, "fail": ResultCode.FAILED,
+                       "ignore": ResultCode.SKIPPED}
+        status = status_dict.get(status[1:-1])
+        return test_name, status, run_time
+
+    def handle_suites_started_tag(self):
+        self.state_machine.get_suites(reset=True)
+        test_suites = self.state_machine.get_suites()
+        test_suites.suites_name = self.suites_name
+        test_suites.test_num = 0
+        for listener in self.get_listeners():
+            suite_report = copy.copy(test_suites)
+            listener.__started__(LifeCycle.TestSuites, suite_report)
+
+    def handle_suites_ended_tag(self):
+        suites = self.state_machine.get_suites()
+        suites.is_completed = True
+
+        for listener in self.get_listeners():
+            listener.__ended__(LifeCycle.TestSuites, test_result=suites,
+                               suites_name=suites.suites_name)
+
+    def handle_one_test_tag(self, message):
+        test_name, status, run_time = \
+            self.parse_test_description(message)
+        test_result = self.state_machine.test(reset=True)
+        test_suite = self.state_machine.suite()
+        test_result.test_class = test_suite.suite_name
+        test_result.test_name = test_name
+        test_result.run_time = run_time
+        test_result.code = status.value
+        test_result.current = self.state_machine.running_test_index + 1
+        self.state_machine.suite().run_time += run_time
+        for listener in self.get_listeners():
+            test_result = copy.copy(test_result)
+            listener.__started__(LifeCycle.TestCase, test_result)
+
+        test_suites = self.state_machine.get_suites()
+        found_unexpected_test = False
+
+        if found_unexpected_test or ResultCode.FAILED == status:
+            for listener in self.get_listeners():
+                result = copy.copy(test_result)
+                listener.__failed__(LifeCycle.TestCase, result)
+        elif ResultCode.SKIPPED == status:
+            for listener in self.get_listeners():
+                result = copy.copy(test_result)
+                listener.__skipped__(LifeCycle.TestCase, result)
+
+        self.state_machine.test().is_completed = True
+        test_suite.test_num += 1
+        test_suites.test_num += 1
+        for listener in self.get_listeners():
+            result = copy.copy(test_result)
+            listener.__ended__(LifeCycle.TestCase, result)
+        self.state_machine.running_test_index += 1
+
+    def fake_run_marker(self, message):
+        fake_marker = re.compile(" +").split(message)
+        self.processTestStartedTag(fake_marker)
+
+    def handle_suite_started_tag(self, message):
+        self.state_machine.suite(reset=True)
+        test_suite = self.state_machine.suite()
+        if re.match(r".*\[suite start\].*", message):
+            _, index = re.match(r".*\[suite start\]", message).span()
+        test_suite.suite_name = message[index:]
+        test_suite.test_num = 0
+        for listener in self.get_listeners():
+            suite_report = copy.copy(test_suite)
+            listener.__started__(LifeCycle.TestSuite, suite_report)
+
+    def handle_suite_ended_tag(self):
+        suite_result = self.state_machine.suite()
+        suites = self.state_machine.get_suites()
+        suite_result.run_time = suite_result.run_time
+        suites.run_time += suite_result.run_time
+        suite_result.is_completed = True
+
+        for listener in self.get_listeners():
+            suite = copy.copy(suite_result)
+            listener.__ended__(LifeCycle.TestSuite, suite, is_clear=True)
+
+    def append_test_output(self, message):
+        if self.state_machine.test().stacktrace:
+            self.state_machine.test().stacktrace = \
+                "%s\r\n" % self.state_machine.test().stacktrace
+        self.state_machine.test().stacktrace = \
+            ''.join((self.state_machine.test().stacktrace, message))
 
 
 class ShellHandler:
@@ -846,8 +1123,8 @@ class ShellHandler:
             parser.__done__()
 
 
-def handle_product_params(message, product_params):
+def handle_product_info(message, product_info):
     message = message[message.index("The"):]
     items = message[len("The "):].split(" is ")
-    product_params.setdefault(items[0].strip(),
-                              items[1].strip().strip("[").strip("]"))
+    product_info.setdefault(items[0].strip(),
+                            items[1].strip().strip("[").strip("]"))

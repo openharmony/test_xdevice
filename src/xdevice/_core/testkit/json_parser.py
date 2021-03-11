@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -18,7 +18,7 @@
 
 import json
 import os
-
+import stat
 from _core.exception import ParamError
 from _core.logger import platform_logger
 from _core.plugin import Config
@@ -68,11 +68,16 @@ class JsonParser:
             else:
                 if not os.path.exists(path_or_content):
                     raise ParamError("The json file {} does not exist".format(
-                        path_or_content))
-                with open(path_or_content, encoding="utf-8") as file_content:
+                        path_or_content), error_no="00110")
+
+                flags = os.O_RDONLY
+                modes = stat.S_IWUSR | stat.S_IRUSR
+                with os.fdopen(os.open(path_or_content, flags, modes),
+                               "r") as file_content:
                     json_content = json.load(file_content)
         except (TypeError, ValueError, AttributeError) as error:
-            raise ParamError("%s %s" % (path_or_content, error))
+            raise ParamError("json file error: %s %s" % (
+                path_or_content, error), error_no="00111")
         self._check_config(json_content)
 
         # set self.config
