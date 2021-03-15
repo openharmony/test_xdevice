@@ -23,16 +23,12 @@ from dataclasses import dataclass
 __all__ = ["Variables"]
 
 SRC_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-SRC_ADAPTER_DIR = os.path.abspath(os.path.join(SRC_DIR, "adapter"))
 MODULES_DIR = os.path.abspath(os.path.dirname(__file__))
 TOP_DIR = os.path.abspath(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-TOP_ADAPTER_DIR = os.path.abspath(os.path.join(TOP_DIR, "adapter"))
 sys.path.insert(0, SRC_DIR)
 sys.path.insert(1, MODULES_DIR)
 sys.path.insert(2, TOP_DIR)
-sys.path.insert(3, SRC_ADAPTER_DIR)
-sys.path.insert(4, TOP_ADAPTER_DIR)
 
 
 @dataclass
