@@ -36,7 +36,6 @@ def main():
                     'xdevice._core.executor',
                     'xdevice._core.report',
                     'xdevice._core.testkit',
-                    'adapter.xdevice_adapter',
                     ],
           package_data={
               'xdevice._core': [

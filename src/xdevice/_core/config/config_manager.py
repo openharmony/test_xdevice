@@ -24,7 +24,6 @@ from _core.exception import ParamError
 from _core.logger import platform_logger
 from _core.utils import get_local_ip
 
-from xdevice_adapter.constants import UsbConst
 
 __all__ = ["UserConfigManager"]
 LOG = platform_logger("ConfigManager")
@@ -194,8 +193,7 @@ class UserConfigManager(object):
     def get_device(self, target_name):
         for node in self.config_content.findall(target_name):
             data_dic = {}
-            if node.attrib["type"] != "usb-hdc" and \
-                    node.attrib["type"] != UsbConst.connector_type:
+            if node.attrib["type"] != "usb-hdc":
                 continue
             data_dic["usb_type"] = node.attrib["type"]
             for sub in node:
