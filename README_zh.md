@@ -219,7 +219,8 @@ xdevice
 
 ## 相关仓<a name="section260848241"></a>
 
-test\_xdevice
+[测试子系统](https://gitee.com/openharmony/docs/blob/master/zh-cn/readme/%E6%B5%8B%E8%AF%95%E5%AD%90%E7%B3%BB%E7%BB%9F.md)
 
-test\_xdevice\_extension
+**test\_xdevice**
 
+[test\_developertest](https://gitee.com/openharmony/test_developertest/blob/master/README_zh.md)
