@@ -164,6 +164,12 @@ class ResultReporter(IReporter):
                         ReportConstant.empty_name:
                     child.set(ReportConstant.module_name, module_name)
                 self._check_tests_and_unavailable(child)
+                # covert "notrun" to "ignored" for the test case status
+                for element in child:
+                    if element.get(ReportConstant.status, "") == \
+                            ReportConstant.not_run:
+                        ignored = int(child.get(ReportConstant.ignored, 0)) + 1
+                        child.set(ReportConstant.ignored, "%s" % ignored)
                 test_suite_elements.append(child)
                 for update_attribute in need_update_attributes:
                     update_value = child.get(update_attribute, 0)

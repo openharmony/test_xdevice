@@ -73,6 +73,7 @@ class ReportConstant:
     blocked = "blocked"
     ignored = "ignored"
     unavailable = "unavailable"
+    not_run = "notrun"
     message = "message"
 
     # case result constants
@@ -401,7 +402,7 @@ class Case:
         return self.status in [ReportConstant.unavailable]
 
     def is_ignored(self):
-        return self.status in [ReportConstant.skip]
+        return self.status in [ReportConstant.skip, ReportConstant.not_run]
 
     def get_result(self):
         if self.is_failed():
