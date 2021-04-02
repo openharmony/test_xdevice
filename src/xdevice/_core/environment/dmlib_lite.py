@@ -15,7 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 import json
 import time
 import re
@@ -26,7 +25,6 @@ from _core.exception import LiteDeviceTimeout
 from _core.exception import LiteDeviceConnectError
 from _core.exception import LiteDeviceExecuteCommandError
 from _core.logger import platform_logger
-from _core.utils import convert_port
 
 __all__ = ["generate_report", "LiteHelper"]
 
@@ -37,6 +35,8 @@ CPP_ERR_MESSAGE = "[ERR]No such file or directory: "
 CTEST_STANDARD_SIGN = "Start to run test suite"
 AT_CMD_ENDS = "OK"
 CTEST_END_SIGN = "All the test suites finished"
+CPP_TEST_STOP_SIGN = "Test Stop"
+CPP_TEST_MOUNT_SIGN = "not mount properly"
 
 _START_JSUNIT_RUN_MARKER = "[start] start run suites"
 _END_JSUNIT_RUN_MARKER = "[end] run suites end"
@@ -76,7 +76,10 @@ def check_read_test_end(result=None, input_command=None):
 
         if result_output.find(INSTALL_END_MARKER) != -1:
             return True
-
+        if (result_output.find(CPP_TEST_MOUNT_SIGN) != -1
+                and result_output.find(CPP_TEST_STOP_SIGN) != -1):
+            LOG.info("find test stop")
+            return True
         if "%s%s" % (CPP_ERR_MESSAGE, input_command[2:]) in result_output:
             LOG.error("execute file not exist, result is %s" % result_output,
                       error_no="00402")
@@ -143,7 +146,8 @@ class LiteHelper:
 
         expect_result = [bytes(CPP_TEST_STANDARD_SIGN, encoding="utf8"),
                          bytes(CPP_SYS_STANDARD_SIGN, encoding="utf8"),
-                         bytes(CPP_TEST_END_SIGN, encoding="utf8")]
+                         bytes(CPP_TEST_END_SIGN, encoding="utf8"),
+                         bytes(CPP_TEST_STOP_SIGN, encoding="utf8")]
         while time.time() - start_time < timeout:
             if not Scheduler.is_execute:
                 raise ExecuteTerminate("Execute terminate", error_no="00300")
@@ -274,7 +278,7 @@ class LiteHelper:
                                          error_no="00402")
 
         LOG.info("local_%s execute command shell %s with timeout %ss" %
-                 (convert_port(com.port), command, str(timeout)))
+                 (com.port, command, str(timeout)))
 
         if isinstance(command, str):
             command = command.encode("utf-8")
@@ -297,8 +301,7 @@ class LiteHelper:
                                          error_no="00402")
 
         LOG.info(
-            "local_%s execute command shell %s" % (convert_port(com.port),
-                                                   command))
+            "local_%s execute command shell %s" % (com.port, command))
         command = command.encode("utf-8")
         if command[-2:] != b"\r\n":
             command = command.rstrip() + b'\r\n'

@@ -24,6 +24,7 @@ import subprocess
 import shutil
 import platform
 import glob
+import time
 
 from _core.logger import platform_logger
 from _core.plugin import Plugin
@@ -234,10 +235,19 @@ class MountKit(ITestKit):
                     replace("nfs_directory", linux_directory).replace(
                     "device_directory", target).replace("//", "/")
                 timeout = 15 if command.startswith("mount") else 1
-                result, status, _ = device.execute_command_with_timeout(
-                    command=command, case_type=case_type, timeout=timeout)
                 if command.startswith("mount"):
                     self.mounted_dir.add(target)
+                    for mount_time in range(1, 4):
+                        result, status, _ = device.execute_command_with_timeout(
+                            command=command, case_type=case_type,
+                            timeout=timeout)
+                        if status:
+                            break
+                        LOG.info("mount failed,try "
+                                 "again {} time".format(mount_time))
+                else:
+                    result, status, _ = device.execute_command_with_timeout(
+                        command=command, case_type=case_type, timeout=timeout)
         LOG.info('prepare environment success')
 
     def __setup__(self, device, **kwargs):
@@ -303,6 +313,12 @@ class MountKit(ITestKit):
         if (str(get_local_ip()) == linux_host) and (
                 linux_directory == ("/data%s" % testcases_dir)):
             return
+        ip = remote_info.get("ip", "")
+        port = remote_info.get("port", "")
+        _dir = remote_info.get("dir", "")
+        if not ip or not port or not _dir:
+            LOG.warning("nfs server's ip or port or dir is empty")
+            return
         for _file in file_local_paths:
             # remote copy
             LOG.info("Trying to copy the file from {} to nfs server".
@@ -310,8 +326,7 @@ class MountKit(ITestKit):
             if not is_remote.lower() == "false":
                 try:
                     import paramiko
-                    client = paramiko.Transport((remote_info.get("ip"),
-                                                 int(remote_info.get("port"))))
+                    client = paramiko.Transport(ip, int(port))
                     client.connect(username=remote_info.get("username"),
                                    password=remote_info.get("password"))
                     sftp = paramiko.SFTPClient.from_transport(client)
@@ -362,12 +377,19 @@ class MountKit(ITestKit):
         else:
             device.execute_command_with_timeout(command="cd /", timeout=1)
             for mounted_dir in self.mounted_dir:
-                device.execute_command_with_timeout(command="umount {}".
-                                                    format(mounted_dir),
-                                                    timeout=2)
-                device.execute_command_with_timeout(command="rm -r {}".
-                                                    format(mounted_dir),
-                                                    timeout=1)
+                for mount_time in range(1, 3):
+                    result, status, _ = device.execute_command_with_timeout(
+                        command="umount {}".format(mounted_dir),
+                        timeout=2)
+                    if status:
+                        break
+                    LOG.info("umount failed,try "
+                             "again {} time".format(mount_time))
+                    time.sleep(1)
+                    if result.find("Resource busy") == -1:
+                        device.execute_command_with_timeout(command="rm -r {}".
+                                                            format(mounted_dir),
+                                                            timeout=1)
 
 
 def copy_file_as_temp(original_file, str_length):

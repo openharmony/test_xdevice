@@ -266,7 +266,9 @@ class CppTestDriver(IDriver):
                 command=collect_test_command,
                 case_type=DeviceTestType.cpp_test_lite,
                 timeout=15, receiver=None)
-
+            if "not mount properly, Test Stop" in result:
+                tests = []
+                return tests
             tests = self.read_nfs_xml(request, self.config.device_xml_path)
             self.delete_device_xml(request, self.config.device_xml_path)
             return tests
@@ -850,6 +852,7 @@ class BuildOnlyTestDriver(IDriver):
         self.config.device = request.config.environment.devices[0]
         self.file_name = request.root.source.test_name
         self.config_file = request.root.source.config_file
+        self.testcases_path = request.config.testcases_path
         file_path = self._get_log_file()
         result_list = self._get_result_list(file_path)
         if len(result_list) == 0:
@@ -880,7 +883,7 @@ class BuildOnlyTestDriver(IDriver):
     @classmethod
     def _get_result_list(cls, file_path):
         result_list = list()
-        for root_path, _, file_names in os.walk(file_path):
+        for root_path, dirs_path, file_names in os.walk(file_path):
             for file_name in file_names:
                 if file_name == "logfile":
                     result_list.append(os.path.join(root_path, file_name))
@@ -890,7 +893,12 @@ class BuildOnlyTestDriver(IDriver):
         json_config = JsonParser(self.config_file)
         log_path = get_config_value('log_path', json_config.get_driver(),
                                     False)
-        file_path = get_file_absolute_path(log_path)
+        log_path = str(log_path.replace("/", "", 1)) if log_path.startswith(
+            "/") else str(log_path)
+        LOG.debug("The log path is:%s" % log_path)
+        file_path = get_file_absolute_path(log_path,
+                                           paths=[self.testcases_path])
+        LOG.debug("The file path is:%s" % file_path)
         return file_path
 
     def __result__(self):
