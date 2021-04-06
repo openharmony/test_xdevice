@@ -238,9 +238,10 @@ class MountKit(ITestKit):
                 if command.startswith("mount"):
                     self.mounted_dir.add(target)
                     for mount_time in range(1, 4):
-                        result, status, _ = device.execute_command_with_timeout(
-                            command=command, case_type=case_type,
-                            timeout=timeout)
+                        result, status, _ = device.\
+                            execute_command_with_timeout(command=command,
+                                                         case_type=case_type,
+                                                         timeout=timeout)
                         if status:
                             break
                         LOG.info("mount failed,try "
@@ -315,8 +316,8 @@ class MountKit(ITestKit):
             return
         ip = remote_info.get("ip", "")
         port = remote_info.get("port", "")
-        _dir = remote_info.get("dir", "")
-        if not ip or not port or not _dir:
+        remote_dir = remote_info.get("dir", "")
+        if not ip or not port or not remote_dir:
             LOG.warning("nfs server's ip or port or dir is empty")
             return
         for _file in file_local_paths:
@@ -388,8 +389,8 @@ class MountKit(ITestKit):
                     time.sleep(1)
                     if result.find("Resource busy") == -1:
                         device.execute_command_with_timeout(command="rm -r {}".
-                                                            format(mounted_dir),
-                                                            timeout=1)
+                                                            format(mounted_dir)
+                                                            , timeout=1)
 
 
 def copy_file_as_temp(original_file, str_length):
