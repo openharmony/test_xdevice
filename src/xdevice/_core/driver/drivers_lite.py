@@ -58,6 +58,8 @@ from _core.report.suite_reporter import SuiteReporter
 __all__ = ["CppTestDriver", "CTestDriver", "init_remote_server"]
 LOG = platform_logger("DriversLite")
 FAILED_RUN_TEST_ATTEMPTS = 2
+CPP_TEST_MOUNT_STOP_SIGN = "not mount properly, Test Stop"
+CPP_TEST_NFS_SIGN = "execve: I/O error"
 
 
 def get_nfs_server(request):
@@ -266,11 +268,12 @@ class CppTestDriver(IDriver):
                 command=collect_test_command,
                 case_type=DeviceTestType.cpp_test_lite,
                 timeout=15, receiver=None)
-            if "not mount properly, Test Stop" in result:
+            if CPP_TEST_MOUNT_STOP_SIGN in result:
                 tests = []
                 return tests
             tests = self.read_nfs_xml(request, self.config.device_xml_path)
             self.delete_device_xml(request, self.config.device_xml_path)
+            time.sleep(1)
             return tests
 
         else:
@@ -375,8 +378,13 @@ class CppTestDriver(IDriver):
         if self.config.xml_output:
             self.run("{} --gtest_output=xml:{}".format(
                 command, self.config.device_report_path))
-            time.sleep(5)
-            test_run = self.read_nfs_xml(request, self.config.device_xml_path)
+            time.sleep(20)
+            test_rerun = True
+            if self.check_xml_exist(self.execute_bin + ".xml"):
+                test_rerun = False
+            test_run = self.read_nfs_xml(request, self.config.device_xml_path,
+                                         test_rerun)
+
             if len(test_run) < len(expected_tests):
                 expected_tests = TestDescription.remove_test(expected_tests,
                                                              test_run)
@@ -483,7 +491,7 @@ class CppTestDriver(IDriver):
             time.sleep(5)
         return False
 
-    def read_nfs_xml(self, request, report_path):
+    def read_nfs_xml(self, request, report_path, is_true=False):
         remote_nfs = get_nfs_server(request)
         if not remote_nfs:
             err_msg = "The name of remote device {} does not match". \
@@ -491,9 +499,10 @@ class CppTestDriver(IDriver):
             LOG.error(err_msg, error_no="00403")
             raise TypeError(err_msg)
         tests = []
-        file_path = os.path.join(report_path,
-                                 self.execute_bin + ".xml")
-        if not self.check_xml_exist(self.execute_bin + ".xml"):
+        execute_bin_xml = (self.execute_bin + "_1.xml") if is_true else (
+                    self.execute_bin + ".xml")
+        file_path = os.path.join(report_path, execute_bin_xml)
+        if not self.check_xml_exist(execute_bin_xml):
             return tests
 
         from xml.etree import ElementTree
@@ -575,7 +584,11 @@ class CppTestDriver(IDriver):
             client.close()
         else:
             for report_xml in glob.glob(os.path.join(report_path, '*.xml')):
-                os.remove(report_xml)
+                try:
+                    os.remove(report_xml)
+                except Exception as exception:
+                    LOG.error(
+                        "remove {} Failed.{}".format(report_xml, exception))
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""
