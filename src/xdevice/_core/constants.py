@@ -232,6 +232,7 @@ class CKit:
     query = "QueryKit"
     liteshell = "LiteShellKit"
     app_install = "AppInstallKit"
+    deploytool = "DeployToolKit"
 
 
 @dataclass

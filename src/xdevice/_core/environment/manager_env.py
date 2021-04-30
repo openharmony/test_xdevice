@@ -105,7 +105,7 @@ class EnvironmentManager(object):
                 self.managers[manager_instance.__class__.__name__] = \
                     manager_instance
             except Exception as error:
-                LOG.debug(error)
+                LOG.debug("Env start error:%s" % error)
 
     def env_stop(self):
         for manager in self.managers.values():

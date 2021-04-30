@@ -48,7 +48,7 @@ from _core.environment.manager_env import DeviceAllocationState
 
 
 __all__ = ["DeployKit", "MountKit", "RootFsKit", "QueryKit", "LiteShellKit",
-           "LiteAppInstallKit"]
+           "LiteAppInstallKit", "DeployToolKit"]
 LOG = platform_logger("KitLite")
 
 RESET_CMD = "0xEF, 0xBE, 0xAD, 0xDE, 0x0C, 0x00, 0x87, 0x78, 0x00, 0x00, " \
@@ -382,15 +382,15 @@ class MountKit(ITestKit):
                     result, status, _ = device.execute_command_with_timeout(
                         command="umount {}".format(mounted_dir),
                         timeout=2)
+                    if result.find("Resource busy") == -1:
+                        device.execute_command_with_timeout(command="rm -r {}".
+                                                            format(mounted_dir)
+                                                            , timeout=1)
                     if status:
                         break
                     LOG.info("umount failed,try "
                              "again {} time".format(mount_time))
                     time.sleep(1)
-                    if result.find("Resource busy") == -1:
-                        device.execute_command_with_timeout(command="rm -r {}".
-                                                            format(mounted_dir)
-                                                            , timeout=1)
 
 
 def copy_file_as_temp(original_file, str_length):
@@ -682,3 +682,30 @@ def process_product_info(message, product_info):
         items = message[len("The "):].split(" is ")
         product_info.setdefault(items[0].strip(),
                                 items[1].strip().strip("[").strip("]"))
+
+
+@Plugin(type=Plugin.TEST_KIT, id=CKit.deploytool)
+class DeployToolKit(ITestKit):
+    def __init__(self):
+        self.config = None
+        self.auto_deploy = None
+        self.time_out = None
+
+    def __check_config__(self, config):
+        self.config = config
+        self.auto_deploy = get_config_value('auto_deploy', config, False)
+        self.time_out = get_config_value('timeout', config, False)
+        if self.auto_deploy or not self.time_out:
+            msg = "The config for deploytool kit is invalid " \
+                  "with auto_deploy:{},timeout:{}".format(self.auto_deploy,
+                                                          self.time_out)
+            LOG.error(msg, error_no="00108")
+            raise ParamError(msg, error_no="00108")
+
+    def __setup__(self, device, **kwargs):
+        args = kwargs
+        request = args.get("request", None)
+        request.confing.deploy_tool_kit = self.config
+
+    def __teardown__(self, device):
+        pass
