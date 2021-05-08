@@ -46,6 +46,7 @@ from _core.logger import platform_logger
 from _core.report.reporter_helper import DataHelper
 from _core.testkit.json_parser import JsonParser
 from _core.testkit.kit_lite import DeployKit
+from _core.testkit.kit_lite import DeployToolKit
 from _core.utils import get_config_value
 from _core.utils import get_kit_instances
 from _core.utils import check_result_report
@@ -58,6 +59,8 @@ from _core.report.suite_reporter import SuiteReporter
 __all__ = ["CppTestDriver", "CTestDriver", "init_remote_server"]
 LOG = platform_logger("DriversLite")
 FAILED_RUN_TEST_ATTEMPTS = 2
+CPP_TEST_MOUNT_STOP_SIGN = "not mount properly, Test Stop"
+CPP_TEST_NFS_SIGN = "execve: I/O error"
 
 
 def get_nfs_server(request):
@@ -266,11 +269,12 @@ class CppTestDriver(IDriver):
                 command=collect_test_command,
                 case_type=DeviceTestType.cpp_test_lite,
                 timeout=15, receiver=None)
-            if "not mount properly, Test Stop" in result:
+            if CPP_TEST_MOUNT_STOP_SIGN in result:
                 tests = []
                 return tests
             tests = self.read_nfs_xml(request, self.config.device_xml_path)
             self.delete_device_xml(request, self.config.device_xml_path)
+            time.sleep(1)
             return tests
 
         else:
@@ -365,6 +369,11 @@ class CppTestDriver(IDriver):
             command=command, case_type=DeviceTestType.cpp_test_lite,
             timeout=timeout, receiver=handler)
         self.config.command_result += result
+        if result.count(CPP_TEST_NFS_SIGN) >= 1:
+            _, _, error = self.config.device.execute_command_with_timeout(
+                command="ping %s" % self.linux_host,
+                case_type=DeviceTestType.cpp_test_lite,
+                timeout=5)
         return error, result, handler
 
     def _do_test_run(self, command, request):
@@ -375,8 +384,13 @@ class CppTestDriver(IDriver):
         if self.config.xml_output:
             self.run("{} --gtest_output=xml:{}".format(
                 command, self.config.device_report_path))
-            time.sleep(5)
-            test_run = self.read_nfs_xml(request, self.config.device_xml_path)
+            time.sleep(20)
+            test_rerun = True
+            if self.check_xml_exist(self.execute_bin + ".xml"):
+                test_rerun = False
+            test_run = self.read_nfs_xml(request, self.config.device_xml_path,
+                                         test_rerun)
+
             if len(test_run) < len(expected_tests):
                 expected_tests = TestDescription.remove_test(expected_tests,
                                                              test_run)
@@ -483,7 +497,7 @@ class CppTestDriver(IDriver):
             time.sleep(5)
         return False
 
-    def read_nfs_xml(self, request, report_path):
+    def read_nfs_xml(self, request, report_path, is_true=False):
         remote_nfs = get_nfs_server(request)
         if not remote_nfs:
             err_msg = "The name of remote device {} does not match". \
@@ -491,9 +505,11 @@ class CppTestDriver(IDriver):
             LOG.error(err_msg, error_no="00403")
             raise TypeError(err_msg)
         tests = []
-        file_path = os.path.join(report_path,
-                                 self.execute_bin + ".xml")
-        if not self.check_xml_exist(self.execute_bin + ".xml"):
+        execute_bin_xml = (self.execute_bin + "_1.xml") if is_true else (
+                self.execute_bin + ".xml")
+        LOG.debug("run into :{}".format(is_true))
+        file_path = os.path.join(report_path, execute_bin_xml)
+        if not self.check_xml_exist(execute_bin_xml):
             return tests
 
         from xml.etree import ElementTree
@@ -575,7 +591,11 @@ class CppTestDriver(IDriver):
             client.close()
         else:
             for report_xml in glob.glob(os.path.join(report_path, '*.xml')):
-                os.remove(report_xml)
+                try:
+                    os.remove(report_xml)
+                except Exception as exception:
+                    LOG.error(
+                        "remove {} Failed.{}".format(report_xml, exception))
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""
@@ -619,8 +639,22 @@ class CTestDriver(IDriver):
                     request.root.source.source_file.strip()).split(".")[0]
             else:
                 source = request.root.source.source_string.strip()
-
-            self._run_ctest(source=source, request=request)
+            json_config = JsonParser(source)
+            kit_instances = get_kit_instances(json_config,
+                                              request.config.resource_path,
+                                              request.config.testcases_path)
+            for (kit_instance, kit_info) in zip(kit_instances,
+                                                json_config.get_kits()):
+                if isinstance(kit_instance, DeployToolKit):
+                    LOG.debug("run ctest third party")
+                    self._run_ctest_third_party(source=source, request=request,
+                                                time_out=int(
+                                                    kit_instance.time_out))
+                    break
+                else:
+                    LOG.debug("run ctest")
+                    self._run_ctest(source=source, request=request)
+                    break
 
         except (LiteDeviceExecuteCommandError, Exception) as exception:
             LOG.error(exception, error_no=getattr(exception, "error_no",
@@ -662,6 +696,66 @@ class CTestDriver(IDriver):
                 execute_command_with_timeout(
                     command=reset_cmd, case_type=DeviceTestType.ctest_lite,
                     key=ComType.deploy_com, timeout=90, receiver=handler)
+            device_log_file = get_device_log_file(request.config.report_path,
+                                                  request.config.device.
+                                                  __get_serial__())
+            device_log_file_open = \
+                os.open(device_log_file, os.O_WRONLY | os.O_CREAT |
+                        os.O_APPEND, 0o755)
+            with os.fdopen(device_log_file_open, "a") as file_name:
+                file_name.write("{}{}".format(
+                    "\n".join(result.split("\n")[0:-1]), "\n"))
+                file_name.flush()
+        finally:
+            self.config.device.device.com_dict.get(
+                ComType.deploy_com).close()
+
+    def _run_ctest_third_party(self, source=None, request=None, time_out=5):
+        parser_instances = []
+        parsers = get_plugin(Plugin.PARSER, ParserType.ctest_lite)
+        try:
+            if not source:
+                LOG.error("Error: source don't exist %s." % source,
+                          error_no="00101")
+                return
+
+            version = get_test_component_version(self.config)
+
+            for parser in parsers:
+                parser_instance = parser.__class__()
+                parser_instance.suites_name = self.file_name
+                parser_instance.product_info.setdefault("Version", version)
+                parser_instance.listeners = request.listeners
+                parser_instances.append(parser_instance)
+            handler = ShellHandler(parser_instances)
+
+            while True:
+                input_burning = input("Please enter 'y' or 'n' after "
+                                      "the burning is complete,"
+                                      "enter 'quit' to exit:")
+                if input_burning.lower().strip() in ["y", "yes"]:
+                    LOG.info("Burning succeeded.")
+                    break
+                elif input_burning.lower().strip() in ["n", "no"]:
+                    LOG.info("Burning failed.")
+                elif input_burning.lower().strip() == "quit":
+                    break
+                else:
+                    LOG.info("The input {} parameter is incorrect,"
+                             "please enter 'y' or 'n' after the "
+                             "burning is complete ,enter 'quit' "
+                             "to exit.".format(input_burning))
+            LOG.info("Please press the device "
+                     "reset button when the send commmand [] appears ")
+            time.sleep(3)
+            self.result = "%s.xml" % os.path.join(
+                request.config.report_path, "result", self.file_name)
+            self.config.device.device.com_dict.get(
+                ComType.deploy_com).connect()
+            result, _, error = self.config.device.device. \
+                execute_command_with_timeout(
+                command=[], case_type=DeviceTestType.ctest_lite,
+                key=ComType.deploy_com, timeout=time_out, receiver=handler)
             device_log_file = get_device_log_file(request.config.report_path,
                                                   request.config.device.
                                                   __get_serial__())

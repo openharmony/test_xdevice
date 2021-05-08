@@ -354,9 +354,11 @@ class DeviceLite(IDevice):
                     timeout=timeout,
                     receiver=receiver)
         if not receiver:
-            LOG.debug("execute result:%s", filter_result)
-        if not status:
-            LOG.debug("error_message:%s", error_message)
+            LOG.debug("%s execute result:%s" % (
+                convert_serial(self.__get_serial__()), filter_result))
+            if not status:
+                LOG.debug("%s error_message:%s" % (
+                    convert_serial(self.__get_serial__()), error_message))
         return filter_result, status, error_message
 
     def recover_device(self):
@@ -368,7 +370,7 @@ class DeviceLite(IDevice):
             execute_command_with_timeout(command="reset", timeout=30)
         if not filter_result:
             if check_mode(ModeType.decc):
-                LOG.debug("set device %s recover state to false" %
+                LOG.debug("Set device %s recover state to false" %
                           self.device_sn)
                 self.device_allocation_state = DeviceAllocationState.unusable
                 self.set_recover_state(False)
