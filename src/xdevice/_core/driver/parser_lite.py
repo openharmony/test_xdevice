@@ -622,7 +622,8 @@ class CTestParser(IParser):
             except AttributeError:
                 LOG.error("parsing log: %s failed" % (line.strip()),
                           error_no="00405")
-            self.last_line = line
+            if line and line.strip():
+                self.last_line = line
 
     def _parse_product_info(self, line):
         if _PRODUCT_PARA_START in line:
