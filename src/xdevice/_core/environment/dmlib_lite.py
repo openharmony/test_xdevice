@@ -228,16 +228,17 @@ class LiteHelper:
             data = com.readline().decode('gbk', errors='ignore')
             data = PATTERN.sub('', data)
             if isinstance(input_command, list):
-                data = "{} {}".format(get_current_time(), data)
-                if data and receiver:
-                    receiver.__read__(data.replace("\r", ""))
-                result = "{}{}".format(result, data.replace("\r", ""))
-                if re.search(r"\d+\s+Tests\s+\d+\s+Failures\s+\d+\s+"
-                             r"Ignored", data):
-                    start = time.time()
+                if len(data.strip()) > 0:
+                    data = "{} {}".format(get_current_time(), data)
+                    if data and receiver:
+                        receiver.__read__(data.replace("\r", ""))
+                    result = "{}{}".format(result, data.replace("\r", ""))
+                    if re.search(r"\d+\s+Tests\s+\d+\s+Failures\s+\d+\s+"
+                                 r"Ignored", data):
+                        start = time.time()
+                    if CTEST_END_SIGN in data:
+                        break
                 if (int(time.time()) - int(start)) > timeout:
-                    break
-                if CTEST_END_SIGN in data:
                     break
             else:
                 result = "{}{}".format(
