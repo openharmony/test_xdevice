@@ -43,7 +43,8 @@ from _core.utils import check_mode
 LOG = platform_logger("DeviceLite")
 TIMEOUT = 90
 RETRY_ATTEMPTS = 0
-HDC = "litehdc.exe"
+HDC = "hdc_std.exe"
+DEFAULT_BAUD_RATE = 115200
 
 
 def get_hdc_path():
@@ -510,7 +511,7 @@ class ComController:
         self.com = None
         self.serial_port = device.get("com") if device.get("com") else None
         self.baud_rate = int(device.get("baud_rate")) if device.get(
-            "baud_rate") else 115200
+            "baud_rate") else DEFAULT_BAUD_RATE
         self.timeout = int(device.get("timeout")) if device.get(
             "timeout") else TIMEOUT
 

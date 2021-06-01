@@ -1,6 +1,6 @@
-#!/usr/bin/env sh
+#!/bin/bash
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (C) 2020-2021 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
+set -e
 
 error()
 {
@@ -29,10 +31,10 @@ fi
 
 $PYTHON -c 'import sys; exit(1) if sys.version_info.major < 3 or sys.version_info.minor < 7 else exit(0)' || \
 error "Python3.7 or higher version required!"
-cd $(dirname "$0") || error "Failure to change direcory!"
+cd $(dirname "$0") || error "Failure to change directory!"
 $PYTHON -c "import easy_install" || error "Please install setuptools first!"
 
-if [ ! -d $TOOLS ]; then
+if [ ! -d "$TOOLS" ]; then
   error "$TOOLS directory not exists"
 fi
 
@@ -53,3 +55,4 @@ do
 done
 
 $PYTHON -m xdevice "$@"
+exit 0

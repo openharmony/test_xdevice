@@ -383,6 +383,8 @@ def _get_test_type(config_file, test_driver, ext):
     if ext in [".py", ".js", ".dex", ".hap", ".bin"] \
             and ext in EXT_TYPE_DICT.keys():
         test_type = EXT_TYPE_DICT[ext]
+    elif ext in EXT_TYPE_DICT.keys():
+        test_type = DeviceTestType.hap_test
     else:
         test_type = DeviceTestType.cpp_test
     return test_type
