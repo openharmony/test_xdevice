@@ -243,6 +243,10 @@ class DeviceTestDriver(IDriver):
         if configs["testcases_path"]:
             sys.path.insert(1, configs["testcases_path"])
 
+        # apply data to devicetest module about resource path
+        request = configs.get('request', None)
+        if request:
+            sys.ecotest_resource_path = request.config.resource_path
         # run devicetest
         from _devicetest.devicetest.main import DeviceTest
         device_test = DeviceTest(test_list=test_list, configs=configs,

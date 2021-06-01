@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 import json
 import time
 import re
@@ -25,6 +26,7 @@ from _core.exception import LiteDeviceTimeout
 from _core.exception import LiteDeviceConnectError
 from _core.exception import LiteDeviceExecuteCommandError
 from _core.logger import platform_logger
+from _core.utils import convert_port
 
 __all__ = ["generate_report", "LiteHelper"]
 
@@ -279,7 +281,7 @@ class LiteHelper:
                                          error_no="00402")
 
         LOG.info("local_%s execute command shell %s with timeout %ss" %
-                 (com.port, command, str(timeout)))
+                 (convert_port(com.port), command, str(timeout)))
 
         if isinstance(command, str):
             command = command.encode("utf-8")
@@ -302,7 +304,8 @@ class LiteHelper:
                                          error_no="00402")
 
         LOG.info(
-            "local_%s execute command shell %s" % (com.port, command))
+            "local_%s execute command shell %s" % (convert_port(com.port),
+                                                   command))
         command = command.encode("utf-8")
         if command[-2:] != b"\r\n":
             command = command.rstrip() + b'\r\n'
@@ -340,8 +343,9 @@ class LiteHelper:
 
             elif "put" == command_type:
                 url = base_url + target_save_path + command
-                data = open(local_source_dir + command, "rb")
-                response = requests.put(url=url, headers=headers, data=data)
+                with open(local_source_dir + command, "rb") as data:
+                    response = requests.put(url=url, headers=headers,
+                                            data=data)
                 if response.status_code == 200:
                     LOG.info("{} upload file to {} "
                              "success".format(local_source_dir,
@@ -355,10 +359,10 @@ class LiteHelper:
                 url = base_url + target_save_path + command
                 response = requests.get(url=url, headers=headers, stream=True)
                 if response.status_code == 200:
-                    file_name = open(local_source_dir + command + "bak", "wb")
-                    for file_data in response.iter_content(chunk_size=512):
-                        file_name.write(file_data)
-                    file_name.close()
+                    with open(local_source_dir + command + "bak", "wb") \
+                            as file_name:
+                        for file_data in response.iter_content(chunk_size=512):
+                            file_name.write(file_data)
                     LOG.info("from {} download  file to {} success".format(
                         target_save_path + command,
                         local_source_dir))

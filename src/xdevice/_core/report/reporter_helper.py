@@ -551,8 +551,8 @@ class VisionHelper:
         if not os.path.exists(self.template_name):
             LOG.error("template file not exists")
             return ""
-
-        file_context = open(self.template_name).read()
+        with open(self.template_name) as file_temp:
+            file_context = file_temp.read()
         file_context = self._render_key("", ReportConstant.title_name,
                                         title_name, file_context)
         file_context = self._render_exec_info(file_context, exec_info)

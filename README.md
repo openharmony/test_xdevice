@@ -20,7 +20,6 @@ XDevice consists of the following sub-modules:
 -   **environment**: configures the test framework environment, enabling device discovery and device management.
 -   **testkit**: provides test tools to implement JSON parsing, network file mounting, etc.
 -   **resource**: provides the device connection configuration file and report template definitions.
--   **adapter**: adapts the test framework to open-source software.
 
 ## Directory Structure<a name="section1791423143211"></a>
 
@@ -117,10 +116,10 @@ The environment requirements for using this module are as follows:
 
     ```
     help:
-         Use help to get information.  
+         use help to get information.  
     usage:
-         run:  Display a list of supported run commands.
-         list: Display a list of supported devices and task records.
+         run:  Display a list of supported run command.
+         list: Display a list of supported device and task record.  
     Examples:
          help run
          help list
@@ -136,15 +135,15 @@ The environment requirements for using this module are as follows:
 
     ```
     list:
-         Display device list and task records.  
+         This command is used to display device list and task record.  
     usage:
           list
           list history
           list <id>  
     Introduction:
-         list:         Display the device list.
-         list history: Display historical records of a series of tasks.
-         list <id>:    Display historical records of tasks with the specified IDs.
+         list:         display device list
+         list history: display history record of a serial of tasks
+         list <id>:    display history record about task what contains specific id  
     Examples:
          list
          list history
@@ -162,8 +161,8 @@ The environment requirements for using this module are as follows:
 
     ```
     run:
-         Execute the selected test cases.
-         The command execution process includes use case compilation, execution, and result collection.
+         This command is used to execute the selected testcases.
+         It includes a series of processes such as use case compilation, execution, and result collection.  
     usage: run [-l TESTLIST [TESTLIST ...] | -tf TESTFILE
                 [TESTFILE ...]] [-tc TESTCASE] [-c CONFIG] [-sn DEVICE_SN]
                 [-rp REPORT_PATH [REPORT_PATH ...]]
@@ -179,8 +178,8 @@ The environment requirements for using this module are as follows:
                 action task  
     Specify tests to run.
       positional arguments:
-       action                Specify the action to do.
-       task                  Specify the task name, such as ssts, acts, and hits.
+       action                Specify action
+       task                  Specify task name,such as "ssts", "acts", "hits"
     ```
 
     >![](figures/icon-note.gif) **NOTE:** 
@@ -207,15 +206,15 @@ The environment requirements for using this module are as follows:
     Structure of the report directory (the default or the specified one)
          ├── result # Test case execution results of the module
          │     ├── module name.xml
-         │     ├──  ... 
+         │     ├──  ... ... 
          │      
          ├── log # Running logs of devices and tasks
          │     ├── device 1.log
-         │     ├── ...
+         │     ├── ... ...
          │     ├── task.log
          ├── summary_report.html # Visual report
          ├── summary_report.html # Statistical report
-         └── ...
+         └── ... ...
     ```
 
 

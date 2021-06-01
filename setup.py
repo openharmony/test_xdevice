@@ -25,7 +25,7 @@ def main():
     setup(name='xdevice',
           description='xdevice test framework',
           url='',
-          package_dir={'': 'src', 'adapter': 'adapter'},
+          package_dir={'': 'src'},
           packages=['xdevice',
                     'xdevice._core',
                     'xdevice._core.build',

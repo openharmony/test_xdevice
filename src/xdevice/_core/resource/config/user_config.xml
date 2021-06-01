@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright (c) 2020 Huawei Device Co., Ltd.
 
      Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,53 +14,50 @@
      limitations under the License.
 -->
 <user_config>
-  <environment>
-    <device type="com"
-            label="wifiiot">
-      <serial>
-        <com></com>
-        <type>cmd</type>
-        <baud_rate>115200</baud_rate>
-        <data_bits>8</data_bits>
-        <stop_bits>1</stop_bits>
-        <timeout>20</timeout>
-      </serial>
-      <serial>
-        <com></com>
-        <type>deploy</type>
-        <baud_rate>115200</baud_rate>
-      </serial>
-    </device>
-    <device type="com"
-            label="ipcamera">
-      <serial>
-        <com></com>
-        <type>cmd</type>
-        <baud_rate>115200</baud_rate>
-        <data_bits>8</data_bits>
-        <stop_bits>1</stop_bits>
-        <timeout>1</timeout>
-      </serial>
-    </device>
-    <device type="com"
-            label="ipcamera">
-      <ip></ip>
-      <port></port>
-    </device>
-  </environment>
-  <testcases>
-    <dir></dir>
-    <server label="NfsServer">
-      <ip></ip>
-      <port></port>
-      <dir></dir>
-      <username></username>
-      <password></password>
-      <remote></remote>
-    </server>
-  </testcases>
-  <resource>
-    <dir></dir>
-  </resource>
-  <loglevel>INFO</loglevel>
+    <environment>
+        <device type="com" label="wifiiot">
+            <serial>
+                <com></com>
+                <type>cmd</type>
+                <baud_rate>115200</baud_rate>
+                <data_bits>8</data_bits>
+                <stop_bits>1</stop_bits>
+                <timeout>20</timeout>
+            </serial>
+            <serial>
+                <com></com>
+                <type>deploy</type>
+                <baud_rate>115200</baud_rate>
+            </serial>
+        </device>
+        <device type="com" label="ipcamera">
+            <serial>
+                <com></com>
+                <type>cmd</type>
+                <baud_rate>115200</baud_rate>
+                <data_bits>8</data_bits>
+                <stop_bits>1</stop_bits>
+                <timeout>1</timeout>
+            </serial>
+        </device>
+        <device type="com" label="ipcamera">
+            <ip></ip>
+            <port></port>
+        </device>
+    </environment>
+    <testcases>
+        <dir></dir>
+        <server label="NfsServer">
+            <ip></ip>
+            <port></port>
+            <dir></dir>
+            <username></username>
+            <password></password>
+            <remote></remote>
+        </server>
+    </testcases>
+    <resource>
+        <dir></dir>
+    </resource>
+    <loglevel>INFO</loglevel>
 </user_config>

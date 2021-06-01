@@ -284,7 +284,7 @@ class MountKit(ITestKit):
         for mount_file in self.mount_list:
             source = mount_file.get("source")
             if not source:
-                raise TypeError("The source of MountKit cant be empty "
+                raise TypeError("The source of MountKit can not be empty "
                                 "in Test.json!")
             source = source.replace("$testcases/", "").\
                 replace("$resources/", "")
@@ -314,10 +314,10 @@ class MountKit(ITestKit):
         if (str(get_local_ip()) == linux_host) and (
                 linux_directory == ("/data%s" % testcases_dir)):
             return
-        ip = remote_info.get("ip", "")
+        remote_ip = remote_info.get("ip", "")
         port = remote_info.get("port", "")
         remote_dir = remote_info.get("dir", "")
-        if not ip or not port or not remote_dir:
+        if not remote_ip or not port or not remote_dir:
             LOG.warning("nfs server's ip or port or dir is empty")
             return
         for _file in file_local_paths:
@@ -327,7 +327,7 @@ class MountKit(ITestKit):
             if not is_remote.lower() == "false":
                 try:
                     import paramiko
-                    client = paramiko.Transport(ip, int(port))
+                    client = paramiko.Transport(remote_ip, int(port))
                     client.connect(username=remote_info.get("username"),
                                    password=remote_info.get("password"))
                     sftp = paramiko.SFTPClient.from_transport(client)
@@ -383,9 +383,8 @@ class MountKit(ITestKit):
                         command="umount {}".format(mounted_dir),
                         timeout=2)
                     if result.find("Resource busy") == -1:
-                        device.execute_command_with_timeout(command="rm -r {}".
-                                                            format(mounted_dir)
-                                                            , timeout=1)
+                        device.execute_command_with_timeout(
+                            command="rm -r {}".format(mounted_dir), timeout=1)
                     if status:
                         break
                     LOG.info("umount failed,try "
