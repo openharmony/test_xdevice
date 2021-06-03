@@ -1056,8 +1056,8 @@ class HdcHelper:
         reply_size = struct.unpack(">I12s24s", reply)
         banner_str = b'OHOS HDC'
         connect_key = connect_key.encode("utf-8")
-        size = struct.calcsize('12s24s')
-        fmt = "!I12s24s"
+        size = struct.calcsize('12s256s')
+        fmt = "!I12s256s"
         pack_cmd = struct.pack(fmt, size, banner_str, connect_key)
         HdcHelper.write(connection, pack_cmd)
         return True
