@@ -1052,8 +1052,8 @@ class HdcHelper:
 
     @staticmethod
     def handle_shake(connection, connect_key=""):
-        reply = HdcHelper.read(connection, 40)
-        reply_size = struct.unpack(">I12s24s", reply)
+        reply = HdcHelper.read(connection, 48)
+        reply_size = struct.unpack(">I12s32s", reply)
         banner_str = b'OHOS HDC'
         connect_key = connect_key.encode("utf-8")
         size = struct.calcsize('12s256s')
