@@ -84,6 +84,7 @@ class Scheduler(object):
     task_type = ""
     task_name = ""
     mode = ""
+    proxy = None
 
     # command_queue to store test commands
     command_queue = []
@@ -789,6 +790,10 @@ class Scheduler(object):
         LOG.info(
             "get upload params: %s, %s, %s, %s, %s, %s" % (
                 case_id, result, error, start_time, end_time, report_path))
+        if Scheduler.proxy:
+            Scheduler.proxy.upload_result(case_id, result, error,
+                start_time, end_time, report_path)
+            return
         from agent.factory import upload_result
         upload_result(case_id, result, error, start_time, end_time,
                       report_path)
@@ -814,7 +819,6 @@ class Scheduler(object):
                       error_no="00201")
             return
         LOG.info("need upload %s case" % len(upload_params))
-        from agent.factory import upload_batch
         upload_suite = []
         for upload_param in upload_params:
             case_id, result, error, start_time, end_time, report_path = \
@@ -824,6 +828,11 @@ class Scheduler(object):
                     "report": report_path}
             LOG.info("case info: %s", case)
             upload_suite.append(case)
+        if Scheduler.proxy:
+            Scheduler.proxy.upload_result(case_id, result, error,
+                start_time, end_time, report_path)
+            return
+        from agent.factory import upload_batch            
         upload_batch(upload_suite)
 
     @classmethod
