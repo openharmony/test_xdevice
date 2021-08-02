@@ -17,6 +17,8 @@
 #
 
 import os
+import json
+import copy
 from collections import namedtuple
 
 from _core.constants import DeviceTestType
@@ -30,7 +32,7 @@ from _core.utils import unique_id
 
 
 __all__ = ["TestSetSource", "TestSource", "find_test_descriptors",
-           "find_testdict_descriptors"]
+           "find_testdict_descriptors", "TestDictSource"]
 
 TestSetSource = namedtuple('TestSetSource', 'set')
 TestSource = namedtuple('TestSource', 'source_file source_string config_file '
@@ -51,6 +53,7 @@ EXT_TYPE_DICT = {".dex": DeviceTestType.dex_test,
 PY_SUFFIX = ".py"
 PYD_SUFFIX = ".pyd"
 MODULE_CONFIG_SUFFIX = ".json"
+MAX_DIR_DEPTH = 6
 LOG = platform_logger("TestSource")
 
 
@@ -116,8 +119,8 @@ def find_testdict_descriptors(config):
         for file_name in files:
             if not os.path.isabs(file_name):
                 file_name = os.path.join(Variables.exec_dir, file_name)
-            if os.path.isfile(
-                    file_name) and test_type_key in TEST_TYPE_DICT.keys():
+            if os.path.isfile(file_name) and test_type_key in \
+                    TestDictSource.test_type.keys():
                 desc = _make_test_descriptor(os.path.abspath(file_name),
                                              test_type_key)
                 if desc is not None:
@@ -248,7 +251,7 @@ def _make_test_descriptor(file_path, test_type_key):
     # get params
     filename, _ = get_filename_extension(file_path)
     uid = unique_id("TestSource", filename)
-    test_type = TEST_TYPE_DICT[test_type_key]
+    test_type = TestDictSource.test_type[test_type_key]
     config_file = _get_config_file(
         os.path.join(os.path.dirname(file_path), filename))
 
@@ -358,7 +361,7 @@ def _get_config_file(filename, ext=None, config=None):
 def _get_testcase_config_file(filename):
     depth = 1
     dirname = os.path.dirname(filename)
-    while dirname and depth < 6:
+    while dirname and depth < MAX_DIR_DEPTH:
         for item in os.listdir(dirname):
             item_path = os.path.join(dirname, item)
             if os.path.isfile(item_path) and item.endswith(
@@ -379,11 +382,10 @@ def _get_test_type(config_file, test_driver, ext):
                       error_no="00110")
             return ""
         return _get_test_driver(config_file)
-
     if ext in [".py", ".js", ".dex", ".hap", ".bin"] \
-            and ext in EXT_TYPE_DICT.keys():
-        test_type = EXT_TYPE_DICT[ext]
-    elif ext in EXT_TYPE_DICT.keys():
+            and ext in TestDictSource.exe_type.keys():
+        test_type = TestDictSource.exe_type[ext]
+    elif ext in TestDictSource.exe_type.keys():
         test_type = DeviceTestType.hap_test
     else:
         test_type = DeviceTestType.cpp_test
@@ -397,3 +399,13 @@ def _parse_module_name(config_file, file_name):
         if "{" in file_name:
             return "report"
         return file_name
+
+
+class TestDictSource:
+    exe_type = dict()
+    test_type = dict()
+
+    @classmethod
+    def reset(cls):
+        cls.test_type = copy.deepcopy(TEST_TYPE_DICT)
+        cls.exe_type = copy.deepcopy(EXT_TYPE_DICT)
