@@ -61,6 +61,7 @@ from _core.executor.concurrent import QueueMonitorThread
 from _core.executor.source import TestSetSource
 from _core.executor.source import find_test_descriptors
 from _core.executor.source import find_testdict_descriptors
+from _core.executor.source import TestDictSource
 from _core.logger import platform_logger
 from _core.logger import add_task_file_handler
 from _core.logger import remove_task_file_handler
@@ -99,6 +100,7 @@ class Scheduler(object):
         task = Task(drivers=[])
         task.init(config)
 
+        TestDictSource.reset()
         root_descriptor = self._find_test_root_descriptor(task.config)
         task.set_root_descriptor(root_descriptor)
         return task
@@ -150,6 +152,7 @@ class Scheduler(object):
             LOG.exception(exception, exc_info=False, error_no=error_no)
 
         finally:
+            Scheduler._clear_test_dict_source()
             if getattr(task.config, ConfigConst.test_environment, "") or\
                     getattr(task.config, ConfigConst.configfile, ""):
                 self._restore_environment()
