@@ -1350,12 +1350,13 @@ class RemoteDexRunner:
         command = "export BOOTCLASSPATH=$BOOTCLASSPATH:" \
                   "{remote_path}/{module_name};cd {remote_path}; " \
                   "app_process -cp {remote_path}/{module_name} / " \
-                  "ohos.testkit.runner.ZUnitRunner {junit_para}{arg_list}" \
-                  " --rawLog true --coverage false --debug false " \
+                  "ohos.testkit.runner.JUnitRunner {junit_para}{arg_list}" \
+                  " --rawLog true --coverage false " \
                   "--classpathToScan {remote_path}/{module_name}".format(
-            remote_path=self.config.remote_path,
-            module_name=self.config.module_name,
-            junit_para=self.junit_para, arg_list=self.get_args_command())
+                   remote_path=self.config.remote_path,
+                   module_name=self.config.module_name,
+                   junit_para=self.junit_para,
+                   arg_list=self.get_args_command())
 
         try:
             self.config.device.execute_shell_command(
@@ -1385,18 +1386,18 @@ class RemoteDexRunner:
                 command = "export BOOTCLASSPATH=$BOOTCLASSPATH:" \
                           "{remote_path}/{module_name};cd {remote_path}; " \
                           "app_process -cp {remote_path}/{module_name} / " \
-                          "ohos.testkit.runner.ZUnitRunner {arg_list} " \
+                          "ohos.testkit.runner.JUnitRunner {arg_list} " \
                           "--rawLog true --coverage false " \
-                          "--debug false --classpathToScan " \
+                          "--classpathToScan " \
                           "{remote_path}/{module_name}".format(
-                    remote_path=self.config.remote_path,
-                    module_name=self.config.module_name,
-                    arg_list=self.get_args_command())
+                           remote_path=self.config.remote_path,
+                           module_name=self.config.module_name,
+                           arg_list=self.get_args_command())
                 self.config.device.execute_shell_command(
                     command, timeout=self.config.timeout,
                     receiver=handler, retry=0)
 
-            except ShellCommandUnresponsiveException:
+            except ShellCommandUnresponsiveException as _:
                 LOG.debug("Exception: ShellCommandUnresponsiveException")
             finally:
                 if not len(test_tracker.get_current_run_results()):

@@ -1086,3 +1086,18 @@ class Scheduler(object):
         else:
             kit_version = kit.properties.get(ConfigConst.version, None)
         return kit_version
+
+    @classmethod
+    def update_test_type_in_source(cls, key, value):
+        LOG.debug("update test type dict in source")
+        TestDictSource.test_type[key] = value
+
+    @classmethod
+    def update_ext_type_in_source(cls, key, value):
+        LOG.debug("update ext type dict in source")
+        TestDictSource.exe_type[key] = value
+
+    @classmethod
+    def _clear_test_dict_source(cls):
+        TestDictSource.exe_type.clear()
+        TestDictSource.test_type.clear()
