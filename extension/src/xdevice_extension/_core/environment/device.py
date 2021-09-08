@@ -168,14 +168,14 @@ class Device(IDevice):
     def get_device_type(self):
         model = self.get_property("ro.build.characteristics",
                                   abort_on_exception=True)
-        self.label = self.model_dict.get(model, None)
+        self.label = self.model_dict.get(model.lower(), None)
 
     def get_property(self, prop_name, retry=RETRY_ATTEMPTS,
                      abort_on_exception=False):
         """
         Hdc command, ddmlib function.
         """
-        command = "getprop %s" % prop_name
+        command = "getparam %s" % prop_name
         stdout = self.execute_shell_command(
             command, timeout=5 * 1000, output_flag=False, retry=retry,
             abort_on_exception=abort_on_exception).strip()
@@ -366,7 +366,7 @@ class Device(IDevice):
         pass
 
     def get_recover_result(self, retry=RETRY_ATTEMPTS):
-        command = "getprop ro.product.device"
+        command = "getparam ro.product.model"
         stdout = self.execute_shell_command(command, timeout=5 * 1000,
                                             output_flag=False, retry=retry,
                                             abort_on_exception=True).strip()
