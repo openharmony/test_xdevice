@@ -753,10 +753,6 @@ class HdcHelper:
         sock = HdcHelper.socket(host=device.host, port=device.port,
                                 timeout=DEFAULT_TIMEOUT)
         HdcHelper.handle_shake(sock, device.device_sn)
-        local_end = os.path.split(local)[-1]
-        remote_end = os.path.split(remote)[-1]
-        if not local_end == remote_end:
-            remote = os.path.join(remote, local_end)
         request = HdcHelper.form_hdc_request("file send %s %s" %
                                              (local, remote))
         HdcHelper.write(sock, request)
@@ -772,15 +768,9 @@ class HdcHelper:
             device.log.info("%s execute command: hdc file recv %s to %s" %
                             (convert_serial(device.device_sn), remote, local))
 
-        if not os.path.exists(local):
-            raise HdcError("Local path doesn't exist.")
         sock = HdcHelper.socket(host=device.host, port=device.port,
                                 timeout=DEFAULT_TIMEOUT)
         HdcHelper.handle_shake(sock, device.device_sn)
-        local_end = os.path.split(local)[-1]
-        remote_end = os.path.split(remote)[-1]
-        if not local_end == remote_end:
-            remote = os.path.join(remote, local_end)
         request = HdcHelper.form_hdc_request("file recv %s %s" %
                                              (local, remote))
         HdcHelper.write(sock, request)
