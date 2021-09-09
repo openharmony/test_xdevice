@@ -592,7 +592,7 @@ class AppInstallKit(ITestKit):
 
                 if app_name:
                     result = device.uninstall_package(app_name)
-                    if not result.startswith("Success"):
+                    if not result or not result.startswith("Success"):
                         LOG.warning("error uninstalling package %s %s" %
                                     (device.__get_serial__(), result))
                 else:
