@@ -31,6 +31,7 @@ from _core.constants import ComType
 from _core.constants import ParserType
 from _core.constants import CKit
 from _core.constants import DeviceLiteKernel
+from _core.constants import FilePermission
 from _core.driver.parser_lite import ShellHandler
 from _core.environment.dmlib_lite import generate_report
 from _core.exception import ExecuteTerminate
@@ -178,7 +179,8 @@ class CppTestDriver(IDriver):
             self.error_message = exception
         finally:
             device_log_file_open = os.open(device_log_file, os.O_WRONLY |
-                                           os.O_CREAT | os.O_APPEND, 0o755)
+                                           os.O_CREAT | os.O_APPEND,
+                                           FilePermission.mode_755)
             with os.fdopen(device_log_file_open, "a") as file_name:
                 file_name.write(self.config.command_result)
                 file_name.flush()
@@ -195,6 +197,7 @@ class CppTestDriver(IDriver):
 
         self.config.device.execute_command_with_timeout(
             command="cd {}".format(execute_dir), timeout=1)
+        self.config.execute_bin_path = execute_dir
 
         if self.execute_bin.startswith("/"):
             command = ".%s" % self.execute_bin
@@ -274,7 +277,6 @@ class CppTestDriver(IDriver):
                 return tests
             tests = self.read_nfs_xml(request, self.config.device_xml_path)
             self.delete_device_xml(request, self.config.device_xml_path)
-            time.sleep(1)
             return tests
 
         else:
@@ -384,7 +386,7 @@ class CppTestDriver(IDriver):
         if self.config.xml_output:
             self.run("{} --gtest_output=xml:{}".format(
                 command, self.config.device_report_path))
-            time.sleep(20)
+            time.sleep(5)
             test_rerun = True
             if self.check_xml_exist(self.execute_bin + ".xml"):
                 test_rerun = False
@@ -431,7 +433,7 @@ class CppTestDriver(IDriver):
                         listener_copy, timeout=15)
                     if len(test_tracker.get_current_run_results()):
                         return
-                except LiteDeviceError:
+                except LiteDeviceError as _:
                     LOG.debug("Exception: ShellCommandUnresponsiveException")
             handler.parsers[0].mark_test_as_failed(test)
 
@@ -495,6 +497,8 @@ class CppTestDriver(IDriver):
             if xml_file in result:
                 return True
             time.sleep(5)
+            if (self.execute_bin + "_1.xml") in result:
+                return False
         return False
 
     def read_nfs_xml(self, request, report_path, is_true=False):
@@ -584,9 +588,9 @@ class CppTestDriver(IDriver):
                         try:
                             sftp.remove(filepath)
                             time.sleep(0.5)
-                        except IOError:
+                        except IOError as _:
                             pass
-            except FileNotFoundError:
+            except FileNotFoundError as _:
                 pass
             client.close()
         else:
@@ -595,7 +599,8 @@ class CppTestDriver(IDriver):
                     os.remove(report_xml)
                 except Exception as exception:
                     LOG.error(
-                        "remove {} Failed.{}".format(report_xml, exception))
+                        "remove {} Failed:{}".format(report_xml, exception))
+                    pass
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""
@@ -701,7 +706,7 @@ class CTestDriver(IDriver):
                                                   __get_serial__())
             device_log_file_open = \
                 os.open(device_log_file, os.O_WRONLY | os.O_CREAT |
-                        os.O_APPEND, 0o755)
+                        os.O_APPEND, FilePermission.mode_755)
             with os.fdopen(device_log_file_open, "a") as file_name:
                 file_name.write("{}{}".format(
                     "\n".join(result.split("\n")[0:-1]), "\n"))
@@ -858,7 +863,7 @@ class OpenSourceTestDriver(IDriver):
                 request.config.device.__get_serial__())
             device_log_file_open = \
                 os.open(device_log_file, os.O_WRONLY | os.O_CREAT |
-                        os.O_APPEND, 0o755)
+                        os.O_APPEND, FilePermission.mode_755)
             with os.fdopen(device_log_file_open, "a") as file_name:
                 for test_bin in copy_list:
                     if not test_bin.endswith(".run-test"):
