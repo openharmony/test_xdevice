@@ -44,6 +44,7 @@ from _core.utils import get_local_ip
 from _core.utils import get_test_component_version
 from _core.exception import LiteDeviceConnectError
 from _core.constants import DeviceLabelType
+from _core.constants import FilePermission
 from _core.environment.manager_env import DeviceAllocationState
 
 
@@ -194,9 +195,8 @@ class MountKit(ITestKit):
                            "mount nfs_ip:nfs_directory  device"
                            "_directory nfs"]
         linux_commands = ["cd /%s" % "storage",
-                          "fuser -k  /%s/%s" % ("storage", "device_directory"),
                           "umount -f /%s/%s" % ("storage", "device_directory"),
-                          "mount -t nfs -o nolock -o tcp nfs_ip:nfs_directory "
+                          "toybox mount -t nfs -o nolock,addr=nfs_ip nfs_ip:nfs_directory "
                           "/%s/%s" % ("storage", "device_directory"),
                           "chmod 755 -R /%s/%s" % (
                           "storage", "device_directory")]
@@ -244,8 +244,15 @@ class MountKit(ITestKit):
                                                          timeout=timeout)
                         if status:
                             break
-                        LOG.info("mount failed,try "
+                        if "already mounted" in result:
+                            LOG.info("{} is mounted".format(target))
+                            break
+                        LOG.info("Mount failed,try "
                                  "again {} time".format(mount_time))
+                        if mount_time == 3:
+                            raise LiteDeviceMountError("Failed to mount the "
+                                                       "device[00402]",
+                                                       error_no="00402")
                 else:
                     result, status, _ = device.execute_command_with_timeout(
                         command=command, case_type=case_type, timeout=timeout)
@@ -365,9 +372,6 @@ class MountKit(ITestKit):
             device.execute_command_with_timeout(command="cd /storage",
                                                 timeout=1)
             for mounted_dir in self.mounted_dir:
-                device.execute_command_with_timeout(command="fuser -k {}".
-                                                    format(mounted_dir),
-                                                    timeout=2)
                 device.execute_command_with_timeout(command="umount -f "
                                                             "/storage{}".
                                                     format(mounted_dir),
@@ -514,7 +518,8 @@ class RootFsKit(ITestKit):
                 hash_file_path = os.path.join(report_path, hash_file_name)
                 # write result to file
                 hash_file_path_open = os.open(hash_file_path, os.O_WRONLY |
-                                              os.O_CREAT | os.O_APPEND, 0o755)
+                                              os.O_CREAT | os.O_APPEND,
+                                              FilePermission.mode_755)
 
                 with os.fdopen(hash_file_path_open, mode="w") as hash_file:
                     hash_file.write(result)
