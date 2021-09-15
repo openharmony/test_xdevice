@@ -137,7 +137,7 @@ def _get_find_proc(find_command, list_command):
     return proc
 
 
-def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False):
+def exec_cmd(cmd, timeout=1 * 60, error_print=True, join_result=False):
     """
     Executes commands in a new shell. Directing stderr to PIPE.
 
@@ -154,6 +154,10 @@ def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False):
     """
 
     sys_type = platform.system()
+    if isinstance(cmd, list):
+        LOG.info("The running command is: {}".format(" ".join(cmd)))
+    if isinstance(cmd, str):
+        LOG.info("The running command is: {}".format(cmd))
     if sys_type == "Linux" or sys_type == "Darwin":
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, shell=False,
@@ -173,7 +177,7 @@ def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False):
             return err if err else out
 
     except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,
-            EOFError, IOError):
+            EOFError, IOError, subprocess.TimeoutExpired):
         sys_type = platform.system()
         if sys_type == "Linux" or sys_type == "Darwin":
             os.killpg(proc.pid, signal.SIGTERM)
