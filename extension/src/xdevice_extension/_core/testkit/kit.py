@@ -152,15 +152,7 @@ class PushKit(ITestKit):
                     LOG.warning(error, error_no=error.error_no)
                     continue
             remount(device)
-            device.push_file(real_src_path, dst)
-            if os.path.isdir(real_src_path):
-                self.add_pushed_dir(real_src_path, dst)
-            else:
-                if device.is_directory(dst):
-                    self.pushed_file.append(
-                        os.path.join(dst, os.path.basename(real_src_path)))
-                else:
-                    self.pushed_file.append(dst)
+            device.hdc_command("file send {} {}".format(real_src_path, dst))
             LOG.debug("Push file finished from {} to {}".format(src, dst))
         for command in self.post_push:
             run_command(device, command)
@@ -573,12 +565,13 @@ class AppInstallKit(ITestKit):
                 LOG.error("The app file {} does not exist".format(app))
                 continue
             if app_file.endswith(".hap"):
-                self.install_hap(device, app_file)
+                # use app install command directly
+                device.hdc_command("app install {}".format(app_file))
             else:
                 result = device.install_package(
                     app_file, get_install_args(
                         device, app_file, self.ex_args))
-                if not result.startswith("Success"):
+                if not result or not result.startswith("Success"):
                     raise AppInstallError(
                         "Failed to install %s on %s. Reason:%s" %
                         (app_file, device.__get_serial__(), result))
@@ -591,10 +584,9 @@ class AppInstallKit(ITestKit):
                 app_name = get_app_name(app)
 
                 if app_name:
-                    result = device.uninstall_package(app_name)
-                    if not result or not result.startswith("Success"):
-                        LOG.warning("error uninstalling package %s %s" %
-                                    (device.__get_serial__(), result))
+                    device.hdc_command("shell bm uninstall -n {}".
+                                       format(app_name))
+                    time.sleep(20)
                 else:
                     LOG.warning("Can't find app_name for %s" % app)
         if self.is_pri_app:
@@ -682,16 +674,9 @@ class AppInstallKit(ITestKit):
 
 
 def remount(device):
-    device.enable_hdc_root()
     cmd = "target mount" \
         if device.usb_type == DeviceConnectorType.hdc else "remount"
     device.hdc_command(cmd)
-    device.execute_shell_command("remount")
-    device.execute_shell_command("mount -o rw,remount /cust")
-    device.execute_shell_command("mount -o rw,remount /product")
-    device.execute_shell_command("mount -o rw,remount /hw_product")
-    device.execute_shell_command("mount -o rw,remount /version")
-    device.execute_shell_command("mount -o rw,remount /%s" % "system")
 
 
 def keep_screen_on(device):
@@ -735,7 +720,7 @@ def run_command(device, command):
     elif command.strip() == "reboot-delay":
         pass
     else:
-        stdout = device.execute_shell_command(command)
+        stdout = device.hdc_command("shell {}".format(command))
     LOG.debug("Run command result: %s" % (stdout if stdout else ""))
     return stdout
 
