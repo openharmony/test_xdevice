@@ -17,7 +17,6 @@
 #
 
 import os
-import re
 import time
 import json
 import shutil
@@ -55,8 +54,11 @@ from xdevice_extension._core.testkit.kit import junit_para_parse
 from xdevice_extension._core.testkit.kit import junit_dex_para_parse
 from xdevice_extension._core.testkit.kit import reset_junit_para
 from xdevice_extension._core.utils import get_filename_extension
+from xdevice_extension._core.utils import start_standing_subprocess
 from xdevice_extension._core.executor.listener import CollectingTestListener
 from xdevice_extension._core.testkit.kit import gtest_para_parse
+from xdevice_extension._core.environment.dmlib import process_command_ret
+
 
 __all__ = ["CppTestDriver", "DexTestDriver", "HapTestDriver",
            "JSUnitTestDriver", "JUnitTestDriver", "RemoteTestRunner",
@@ -339,10 +341,12 @@ class CppTestDriver(IDriver):
 
             hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                                  0o755)
+            self.config.device.hdc_command("shell hilog -r")
+            self._run_cpp_test(config_file, listeners=request.listeners,
+                               request=request)
             with os.fdopen(hilog_open, "a") as hilog_file_pipe:
                 self.config.device.start_catch_device_log(hilog_file_pipe)
-                self._run_cpp_test(config_file, listeners=request.listeners,
-                                   request=request)
+                time.sleep(30)
                 hilog_file_pipe.flush()
 
         except Exception as exception:
@@ -506,23 +510,39 @@ class RemoteCppTestRunner:
             parser_instance = parser.__class__()
             parser_instances.append(parser_instance)
         handler = ShellHandler(parser_instances)
-
-        command = "cd %s; chmod +x *; ./%s %s" \
-                  % (self.config.target_test_path, self.config.module_name,
-                     self.get_args_command())
-
-        self.config.device.execute_shell_command(
-            command, timeout=self.config.timeout, receiver=handler, retry=0)
+        # apply execute right
+        chmod_cmd = "shell chmod 777 {}/{}".format(
+            self.config.target_test_path, self.config.module_name)
+        LOG.info("The apply execute command is {}".format(chmod_cmd))
+        self.config.device.hdc_command(chmod_cmd, timeout=30*1000)
+        # dry run command
+        dry_command = ".{}/{} {}".format(self.config.target_test_path,
+                                         self.config.module_name,
+                                         self.get_args_command())
+        pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
+        command = "%s %s" % (pre_cmd, dry_command)
+        LOG.info("The dry_command execute command is {}".format(command))
+        output = start_standing_subprocess(command.split(),
+                                           return_result=True)
+        LOG.debug("dryrun output ---")
+        output = output.replace("\r", "")
+        handler.__read__(output)
+        handler.__done__()
         return parser_instances[0].tests
 
     def run(self, listener):
         handler = self._get_shell_handler(listener)
-        command = "cd %s; chmod +x *; ./%s %s" \
-                  % (self.config.target_test_path, self.config.module_name,
-                     self.get_args_command())
-
-        self.config.device.execute_shell_command(
-            command, timeout=self.config.timeout, receiver=handler, retry=0)
+        pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
+        command = ".{}/{} {}".format(self.config.target_test_path,
+                                         self.config.module_name,
+                                         self.get_args_command())
+        command = "%s %s" % (pre_cmd, command)
+        LOG.debug("run command is: %s" % command)
+        output = start_standing_subprocess(command.split(), return_result=True)
+        LOG.debug("run output ---")
+        output = output.replace("\r", "")
+        handler.__read__(output)
+        handler.__done__()
 
     def rerun(self, listener, test):
         if self.rerun_attempt:
@@ -531,14 +551,18 @@ class RemoteCppTestRunner:
             listener_copy.append(test_tracker)
             handler = self._get_shell_handler(listener_copy)
             try:
-                command = "cd %s; chmod +x *; ./%s %s" \
-                          % (self.config.target_test_path,
-                             self.config.module_name,
-                             self.get_args_command())
-
-                self.config.device.execute_shell_command(
-                    command, timeout=self.config.timeout, receiver=handler,
-                    retry=0)
+                pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
+                command = ".{}/{} {}".format(self.config.target_test_path,
+                                             self.config.module_name,
+                                             self.get_args_command())
+                command = "%s %s" % (pre_cmd, command)
+                LOG.debug("rerun command is: %s" % command)
+                output = start_standing_subprocess(command.split(),
+                                                   return_result=True)
+                LOG.debug("run output ---")
+                output = output.replace("\r", "")
+                handler.__read__(output)
+                handler.__done__()
 
             except ShellCommandUnresponsiveException:
                 LOG.debug("Exception: ShellCommandUnresponsiveException")
@@ -1743,7 +1767,7 @@ class HapTestDriver(IDriver):
                 filename, junit_test_para, suitefile_target_test_path)
 
             self.result = result.get_test_results(return_message)
-            self._unistall_hap(self.package_name)
+            self._uninstall_hap(self.package_name)
         else:
             self.result = result.get_test_results("Error: install hap failed.")
             LOG.error("Error: install hap failed.", error_no="03204")
@@ -1906,7 +1930,7 @@ class HapTestDriver(IDriver):
             LOG.info("HAP Testcase executed finished")
         return return_code
 
-    def _unistall_hap(self, package_name):
+    def _uninstall_hap(self, package_name):
         return_message = self.config.device.execute_shell_command(
             "pm uninstall %s" % package_name)
         _sleep_according_to_result(return_message)
@@ -1998,10 +2022,9 @@ class JSUnitTestDriver(IDriver):
     def __execute__(self, request):
         try:
             LOG.debug("Start execute xdevice extension JSUnit Test")
-            self.result = os.path.join(request.config.report_path,
-                                       "result",
-                                       '.'.join((request.get_module_name(),
-                                                 "xml")))
+            self.result = os.path.join(
+                request.config.report_path, "result",
+                '.'.join((request.get_module_name(), "xml")))
             self.config = request.config
             self.config.device = request.config.environment.devices[0]
 
@@ -2014,8 +2037,8 @@ class JSUnitTestDriver(IDriver):
                     request.root.source.source_string, error_no="00110")
 
             LOG.debug("Test case file path: %s" % suite_file)
+            self.config.device.hdc_command("shell hilog -r")
             self._run_jsunit(config_file, request)
-            self.generate_console_output(request)
         except Exception as exception:
             self.error_message = exception
             if not getattr(exception, "error_no", ""):
@@ -2027,7 +2050,10 @@ class JSUnitTestDriver(IDriver):
             self.result = check_result_report(
                 request.config.report_path, self.result, self.error_message)
 
-    def generate_console_output(self, request):
+    def generate_console_output(self, device_log_file, request):
+        LOG.info("prepare to read device log, may wait some time")
+        result_message = self.read_device_log(device_log_file, "")
+
         report_name = request.get_module_name()
         parsers = get_plugin(
             Plugin.PARSER, CommonParserType.jsunit)
@@ -2039,37 +2065,29 @@ class JSUnitTestDriver(IDriver):
 
         for parser in parsers:
             parser_instance = parser.__class__()
-            parser_instance.suites_name = "{}_suites".format(report_name)
+            parser_instance.suites_name = report_name
             parser_instance.suite_name = report_name
             parser_instance.listeners = request.listeners
             parser_instances.append(parser_instance)
         handler = ShellHandler(parser_instances)
-
-        from xdevice_extension._core import utils
-        command = "hdc_std -t %s shell hilog -x " % self.config.device.\
-            device_sn
-
-        output = utils.start_standing_subprocess(command, return_result=True)
-        LOG.debug("start to parsing hilog")
-        handler.__read__(output)
-        handler.__done__()
+        process_command_ret(result_message, handler)
 
     def read_device_log(self, device_log_file, result_message):
         device_log_file_open = os.open(device_log_file, os.O_RDONLY,
                                        stat.S_IWUSR | stat.S_IRUSR)
-        with os.fdopen(device_log_file_open, "r") as file_read_pipe:
+
+        with os.fdopen(device_log_file_open, "r", encoding='utf-8') \
+                as file_read_pipe:
             while True:
                 data = file_read_pipe.readline()
-                result_message += data
-                report_name = ""
-                if re.match(r'.*\[create report\]*', data):
-                    _, index = re.match(r'.*\[create report\]*', data).span()
-                    report_name = data[index:].split(".")[0]
-                if result_message.find("[create report]") != -1 or \
-                        int(time.time()) - int(self.start_time) > \
-                        self.timeout:
+                if not data or not data.strip():
                     break
-        return result_message, report_name
+                # only filter JSApp log
+                if data.find("JSApp:") != -1:
+                    result_message += data
+                    if data.find("[end] run suites end") != -1:
+                        break
+        return result_message
 
     def _run_jsunit(self, config_file, request):
         try:
@@ -2088,22 +2106,38 @@ class JSUnitTestDriver(IDriver):
             self.config.device.hdc_command("target mount")
             do_module_kit_setup(request, self.kits)
 
-            # execute test case
-            self.config.device.hdc_command("shell hilog -r")
+            hilog = get_device_log_file(
+                request.config.report_path,
+                request.config.device.__get_serial__() + "_" + request.
+                get_module_name(),
+                "device_hilog")
 
-            command = "aa start -d 123 -a %s -b %s" \
-                      % (ability_name, package)
-            self.start_time = time.time()
-            result_value = self.config.device.execute_shell_command(
-                command, timeout=self.timeout)
-            if "success" in str(result_value).lower():
-                LOG.info("execute %s's testcase success. result value=%s"
-                         % (package, result_value))
-                time.sleep(60)
-            else:
-                LOG.info("execute %s's testcase failed. result value=%s"
-                         % (package, result_value))
+            hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                                 0o755)
 
+            with os.fdopen(hilog_open, "a") as hilog_file_pipe:
+                self.config.device.start_catch_device_log(hilog_file_pipe)
+                # execute test case
+                command = "shell aa start -d 123 -a %s -b %s" \
+                          % (ability_name, package)
+
+                result_value = self.config.device.hdc_command(command)
+                if "success" in str(result_value).lower():
+                    setattr(self, "start_success", True)
+                    LOG.info("execute %s's testcase success. result value=%s"
+                             % (package, result_value))
+                else:
+                    LOG.info("execute %s's testcase failed. result value=%s"
+                             % (package, result_value))
+                self.start_time = time.time()
+                timeout_config = get_config_value('test-timeout',
+                                                  json_config.get_driver(),
+                                                  False, 60000)
+                timeout = int(timeout_config)/1000
+                LOG.info("wait {}s to keep app log".format(timeout))
+                time.sleep(timeout)
+                hilog_file_pipe.flush()
+            self.generate_console_output(hilog, request)
         finally:
             do_module_kit_teardown(request)
 
