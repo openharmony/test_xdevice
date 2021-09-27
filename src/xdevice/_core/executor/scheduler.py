@@ -149,7 +149,7 @@ class Scheduler(object):
             error_message = "%s[%s]" % (str(exception), error_no) \
                 if error_no else str(exception)
             error_no = error_no if error_no else "00000"
-            LOG.exception(exception, exc_info=False, error_no=error_no)
+            LOG.exception(exception, exc_info=True, error_no=error_no)
 
         finally:
             Scheduler._clear_test_dict_source()
