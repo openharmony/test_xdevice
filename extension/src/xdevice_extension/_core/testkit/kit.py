@@ -393,7 +393,6 @@ class ConfigKit(ITestKit):
         self.is_disable_dialing = ""
         self.is_test_harness = ""
         self.is_audio_silent = ""
-        self.is_disable_dalvik_verifier = ""
         self.build_prop_list = ""
         self.is_enable_hook = ""
         self.cust_prop_file = ""
@@ -415,8 +414,6 @@ class ConfigKit(ITestKit):
         self.is_disable_dialing = get_config_value('disable-dialing', config)
         self.is_test_harness = get_config_value('set-test-harness', config)
         self.is_audio_silent = get_config_value('audio-silent', config)
-        self.is_disable_dalvik_verifier = get_config_value(
-            'disable-dalvik-verifier', config)
         self.build_prop_list = get_config_value('build-prop', config)
         self.cust_prop_file = get_config_value('cust-prop-file', config)
         self.cust_props = get_config_value('cust-prop', config)
@@ -471,8 +468,6 @@ class ConfigKit(ITestKit):
             new_props['ro.test_harness'] = '1'
         if self.is_audio_silent:
             new_props['ro.audio.silent'] = '1'
-        if self.is_disable_dalvik_verifier:
-            new_props['dalvik.vm.dexopt-flags'] = 'v=n'
         for prop in self.build_prop_list:
             if prop is None or prop.find("=") < 0 or len(prop.split("=")) != 2:
                 LOG.warning("The build prop:{} not match the format "
@@ -625,28 +620,7 @@ class AppInstallKit(ITestKit):
             finally:
                 zif_file.close()
         else:
-            # push_dest = "/%s" % "sdcard"
-            # push_dest = "%s/%s" % (push_dest, os.path.basename(hap_file))
-            # device.push_file(hap_file, push_dest)
-            # self.pushed_hap_file.append(push_dest)
-            # output = device.execute_shell_command("bm install -p " + push_dest)
             output = device.hdc_command("install %s" % hap_file)
-            # if not output.startswith("Success"):
-            #     output = output.strip()
-            #     if "[ERROR_GET_BUNDLE_INSTALLER_FAILED]" not in output.upper():
-            #         raise AppInstallError(
-            #             "Failed to install %s on %s. Reason:%s" %
-            #             (push_dest, device.__get_serial__(), output))
-            #     else:
-            #         LOG.info("'[ERROR_GET_BUNDLE_INSTALLER_FAILED]' occurs, "
-            #                  "retry install hap")
-            #         exec_out = self.retry_install_hap(
-            #             device, "bm install -p " + push_dest)
-            #         if not exec_out.startswith("Success"):
-            #             raise AppInstallError(
-            #                 "Retry failed,Can't install %s on %s. Reason:%s" %
-            #                 (push_dest, device.__get_serial__(), exec_out))
-            # else:
             LOG.debug("Install %s, and output = %s" % (hap_file, output))
 
     @classmethod
