@@ -217,14 +217,17 @@ class HdcMonitor:
                             self.main_hdc_connection)
 
                 if self.main_hdc_connection and not self.monitoring:
+                    LOG.debug("start monitoring list targets")
                     self.monitoring_list_targets()
                     len_buf = HdcHelper.read(self.main_hdc_connection,
                                              DATA_UNIT_LENGTH)
                     length = struct.unpack("!I", len_buf)[0]
+                    LOG.debug("had received length is: %s" % length)
                     if length >= 0:
                         self.monitoring = True
                         self.process_incoming_target_data(length)
             except (HdcError, Exception) as _:
+                LOG.debug("loop_monitor happened error: %s" % _)
                 self.handle_exception_monitor_loop()
                 break
 
@@ -273,22 +276,21 @@ class HdcMonitor:
 
     def process_incoming_target_data(self, length):
         local_array_list = []
-        if length > 0:
-            data_buf = HdcHelper.read(self.main_hdc_connection, length)
-            data_str = HdcHelper.reply_to_string(data_buf)
-            if 'Empty' not in data_str:
-                lines = data_str.split('\n')
-                for line in lines:
-                    items = line.strip().split('\t')
-                    if not items[0] :
-                        continue
-                    items.append(DeviceState.ONLINE.value)
-                    device_instance = self._get_device_instance(
-                        items, DeviceOsType.default)
-                    local_array_list.append(device_instance)
-            else:
-                LOG.debug("please check device actually.[%s]" % data_str)
-
+        data_buf = HdcHelper.read(self.main_hdc_connection, length)
+        data_str = HdcHelper.reply_to_string(data_buf)
+        if 'Empty' not in data_str:
+            lines = data_str.split('\n')
+            for line in lines:
+                items = line.strip().split('\t')
+                if not items[0] :
+                    continue
+                items.append(DeviceState.ONLINE.value)
+                device_instance = self._get_device_instance(
+                    items, DeviceOsType.default)
+                local_array_list.append(device_instance)
+        else:
+            LOG.debug("please check device actually.[%s]" % data_str)
+        LOG.debug("process target data, local_array_list" % local_array_list)
         self.update_devices(local_array_list)
 
     def _get_device_instance(self, items, os_type):
@@ -751,12 +753,8 @@ class HdcHelper:
         if not os.path.exists(local):
             raise HdcError("Local path doesn't exist.")
         sock = HdcHelper.socket(host=device.host, port=device.port,
-                                timeout=DEFAULT_TIMEOUT)
+                                timeout=timeout)
         HdcHelper.handle_shake(sock, device.device_sn)
-        local_end = os.path.split(local)[-1]
-        remote_end = os.path.split(remote)[-1]
-        if not local_end == remote_end:
-            remote = os.path.join(remote, local_end)
         request = HdcHelper.form_hdc_request("file send %s %s" %
                                              (local, remote))
         HdcHelper.write(sock, request)
@@ -764,6 +762,7 @@ class HdcHelper:
         length = struct.unpack("!I", reply)[0]
         data_buf = HdcHelper.read(sock, length)
         data_str = HdcHelper.reply_to_string(data_buf)
+        device.log.info(data_str)
 
     @staticmethod
     def pull_file(device, remote, local, is_create=False,
@@ -772,15 +771,9 @@ class HdcHelper:
             device.log.info("%s execute command: hdc file recv %s to %s" %
                             (convert_serial(device.device_sn), remote, local))
 
-        if not os.path.exists(local):
-            raise HdcError("Local path doesn't exist.")
         sock = HdcHelper.socket(host=device.host, port=device.port,
-                                timeout=DEFAULT_TIMEOUT)
+                                timeout=timeout)
         HdcHelper.handle_shake(sock, device.device_sn)
-        local_end = os.path.split(local)[-1]
-        remote_end = os.path.split(remote)[-1]
-        if not local_end == remote_end:
-            remote = os.path.join(remote, local_end)
         request = HdcHelper.form_hdc_request("file recv %s %s" %
                                              (local, remote))
         HdcHelper.write(sock, request)
@@ -788,6 +781,7 @@ class HdcHelper:
         length = struct.unpack("!I", reply)[0]
         data_buf = HdcHelper.read(sock, length)
         data_str = HdcHelper.reply_to_string(data_buf)
+        device.log.info(data_str)
 
     @staticmethod
     def _install_remote_package(device, remote_file_path, command):
@@ -854,6 +848,8 @@ class HdcHelper:
                 output_flag = kwargs.get("output_flag", True)
                 timeout_msg = '' if (timeout/1000) == 300.0 else \
                     " with timeout %ss" % str(timeout/1000)
+                end_mark = kwargs.get("end_mark", "")
+                read_timeout = kwargs.get("read_timeout", None)
                 if device.usb_type == DeviceConnectorType.hdc:
                     message = "%s execute command: hdc shell %s%s" % \
                               (convert_serial(device.device_sn), command,
@@ -866,26 +862,31 @@ class HdcHelper:
                 HdcHelper.handle_shake(sock, device.device_sn)
                 request = HdcHelper.form_hdc_request("shell %s" % command)
                 HdcHelper.write(sock, request)
-                len_buf = HdcHelper.read(sock, DATA_UNIT_LENGTH)
-                if len_buf:
-                    length = struct.unpack("!I", len_buf)[0]
                 resp = HdcResponse()
                 resp.okay = True
 
                 from xdevice import Scheduler
-                data = sock.recv(SOCK_DATA_MAX)
-                while data != b'':
+                start_time = int(time.time())
+                while True:
+                    len_buf = HdcHelper.read(sock, DATA_UNIT_LENGTH)
+                    if len_buf:
+                        length = struct.unpack("!I", len_buf)[0]
+                    else:
+                        break
+                    data = sock.recv(length)
                     ret = HdcHelper.reply_to_string(data)
                     if ret:
                         if receiver:
                             receiver.__read__(ret)
                         else:
                             LOG.debug(ret)
-
+                    if end_mark and end_mark in ret:
+                        break
+                    if read_timeout and \
+                            int(time.time()) - start_time > read_timeout:
+                        break
                     if not Scheduler.is_execute:
                         raise ExecuteTerminate()
-                    data = HdcHelper.read(sock, SOCK_DATA_MAX)
-
                 return resp
         except socket.timeout as _:
             device.log.error("%s shell %s timeout[%sS]" % (
@@ -915,6 +916,8 @@ class HdcHelper:
         Create an ASCII string preceded by four hex digits.
         """
         try:
+            if not req.endswith('\0'):
+                req = "%s\0" % req
             req = req.encode("utf-8")
             fmt = "!I%ss" % len(req)
             result = struct.pack(fmt, len(req), req)

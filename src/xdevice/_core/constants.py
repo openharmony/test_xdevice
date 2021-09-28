@@ -283,3 +283,10 @@ class ConfigConst(object):
     module_kits = "module_kits"
     spt = "spt"
     version = "version"
+
+
+class FilePermission(object):
+    mode_777 = 0o777
+    mode_755 = 0o755
+    mode_644 = 0o644
+    

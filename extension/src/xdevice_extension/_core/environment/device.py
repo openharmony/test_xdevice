@@ -27,6 +27,7 @@ from xdevice import Plugin
 from xdevice import exec_cmd
 from xdevice import ConfigConst
 
+from xdevice_extension._core import utils
 from xdevice_extension._core.environment.dmlib import HdcHelper
 from xdevice_extension._core.exception import HdcError
 from xdevice_extension._core.environment.dmlib import CollectingOutputReceiver
@@ -72,7 +73,7 @@ def perform_device_action(func):
                 if self.usb_type == DeviceConnectorType.hdc:
                     cmd = "hdc reset"
                     self.log.info("re-execute hdc reset")
-                exec_cmd(cmd)
+                    exec_cmd(cmd)
                 if not self.recover_device():
                     LOG.debug("set device %s %s false" % (
                         self.device_sn, ConfigConst.recover_state))
@@ -166,16 +167,14 @@ class Device(IDevice):
         return self.device_state_monitor.wait_for_device_available()
 
     def get_device_type(self):
-        model = self.get_property("ro.build.characteristics",
-                                  abort_on_exception=True)
-        self.label = self.model_dict.get(model, None)
+        self.label = self.model_dict.get("default", None)
 
     def get_property(self, prop_name, retry=RETRY_ATTEMPTS,
                      abort_on_exception=False):
         """
         Hdc command, ddmlib function.
         """
-        command = "getprop %s" % prop_name
+        command = "getparam %s" % prop_name
         stdout = self.execute_shell_command(
             command, timeout=5 * 1000, output_flag=False, retry=retry,
             abort_on_exception=abort_on_exception).strip()
@@ -193,7 +192,7 @@ class Device(IDevice):
         if self.usb_type == DeviceConnectorType.hdc:
             LOG.debug("%s execute command hdc %s%s" % (
                 convert_serial(self.device_sn), command, timeout_msg))
-            cmd = ["hdc_std", "-t", self.device_sn]
+        cmd = ["hdc_std", "-t", self.device_sn]
         if isinstance(command, list):
             cmd.extend(command)
         else:
@@ -292,9 +291,6 @@ class Device(IDevice):
         timeout = kwargs.get("timeout", TIMEOUT)
         HdcHelper.push_file(self, local, remote, is_create=is_create,
                             timeout=timeout)
-        if not self.is_file_exist(remote):
-            LOG.error("push %s to %s failed" % (local, remote))
-            raise HdcError("push %s to %s failed" % (local, remote))
 
     @perform_device_action
     def pull_file(self, remote, local, **kwargs):
@@ -337,9 +333,7 @@ class Device(IDevice):
 
     def is_file_exist(self, file_path):
         file_path = check_path_legal(file_path)
-        command = ["hdc_std", "shell", "ls", file_path]
-        output = exec_cmd(command)
-
+        output = self.execute_shell_command("ls {}".format(file_path))
         if output and "No such file or directory" not in output:
             return True
         return False
@@ -360,13 +354,23 @@ class Device(IDevice):
         self._stop_catch_device_log()
 
     def _start_catch_device_log(self):
-        pass
+        if self.hilog_file_pipe:
+            command = "hilog"
+            if self.usb_type == DeviceConnectorType.hdc:
+                cmd = ['hdc_std', "-t", self.device_sn, "shell", command]
+                LOG.info("execute command: %s" % " ".join(cmd).replace(
+                    self.device_sn, convert_serial(self.device_sn)))
+                self.device_hilog_proc = utils.start_standing_subprocess(
+                    cmd, self.hilog_file_pipe)
 
     def _stop_catch_device_log(self):
-        pass
+        if self.device_hilog_proc:
+            utils.stop_standing_subprocess(self.device_hilog_proc)
+            self.device_hilog_proc = None
+            self.hilog_file_pipe = None
 
     def get_recover_result(self, retry=RETRY_ATTEMPTS):
-        command = "getprop ro.product.device"
+        command = "getparam ro.product.model"
         stdout = self.execute_shell_command(command, timeout=5 * 1000,
                                             output_flag=False, retry=retry,
                                             abort_on_exception=True).strip()
