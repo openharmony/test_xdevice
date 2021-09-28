@@ -615,6 +615,7 @@ class JSUnitParser(IParser):
         self.state_machine = StateRecorder()
         self.suites_name = ""
         self.listeners = []
+        self.suite_name = ""
 
     def get_listeners(self):
         return self.listeners
@@ -630,11 +631,12 @@ class JSUnitParser(IParser):
         suite_result.is_completed = True
         for listener in self.get_listeners():
             suite = copy.copy(suite_result)
-            listener.__ended__(LifeCycle.TestSuite, suite,
+            listener.__ended__(LifeCycle.TestSuites, suite,
                                suite_report=True)
         self.state_machine.current_suite = None
 
     def parse(self, line):
+        line = line.strip()
         if (self.state_machine.suites_is_started() or line.find(
                 _START_JSUNIT_RUN_MARKER) != -1) and line.find(
                 _ACE_LOG_MARKER) != -1:
@@ -669,7 +671,11 @@ class JSUnitParser(IParser):
         run_time = end_timestamp - start_timestamp
         _, status_end_index = re.match(pattern, filter_message).span()
         status = filter_message[:status_end_index]
-        test_name = filter_message[status_end_index:]
+        if " ;" in filter_message:
+            test_name = filter_message[status_end_index:
+                                       str(filter_message).find(" ;")]
+        else:
+            test_name = filter_message[status_end_index:]
         status_dict = {"pass": ResultCode.PASSED, "fail": ResultCode.FAILED,
                        "ignore": ResultCode.SKIPPED}
         status = status_dict.get(status[1:-1])
