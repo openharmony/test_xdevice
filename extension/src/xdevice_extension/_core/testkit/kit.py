@@ -48,7 +48,7 @@ from xdevice_extension._core.utils import convert_serial
 
 __all__ = ["STSKit", "PushKit", "PropertyCheckKit", "ShellKit", "WifiKit",
            "ConfigKit", "AppInstallKit", "junit_para_parse",
-           "gtest_para_parse", "junit_dex_para_parse", "reset_junit_para"]
+           "gtest_para_parse", "reset_junit_para"]
 
 LOG = platform_logger("Kit")
 
@@ -648,7 +648,7 @@ class AppInstallKit(ITestKit):
 
 
 def remount(device):
-    cmd = "target mount" \
+    cmd = "mount -o rw,remount /" \
         if device.usb_type == DeviceConnectorType.hdc else "remount"
     device.hdc_command(cmd)
 
@@ -752,62 +752,6 @@ def junit_para_parse(device, junit_paras, prefix_char="-e"):
                                      ",".join(junit_paras[para_name])]))
 
     return " ".join(ret_str)
-
-
-def junit_dex_para_parse(device, junit_paras, prefix_char="--"):
-    """To parse the para of junit
-    Args:
-        device: the device running
-        junit_paras: the para dict of junit
-        prefix_char: the prefix char of parsed cmd
-    Returns:
-        the new para using in a command like -e testFile xxx
-        -e coverage true...
-    """
-    ret_str = []
-    path = "/%s/%s/%s/%s" % ("data", "local", "tmp", "ajur")
-    include_file = "%s/%s" % (path, "includes.txt")
-    exclude_file = "%s/%s" % (path, "excludes.txt")
-
-    if not isinstance(junit_paras, dict):
-        LOG.warning("The para of junit is not the dict format as required")
-        return ""
-    # Disable screen keyguard
-    disable_key_guard = junit_paras.get('disable-keyguard')
-    if not disable_key_guard or disable_key_guard[0].lower() != 'false':
-        from xdevice_extension._core.driver.drivers import disable_keyguard
-        disable_keyguard(device)
-
-    for para_name in junit_paras.keys():
-        path = "/%s/%s/%s/%s/" % ("data", "local", "tmp", "ajur")
-        if para_name.strip() == 'test-file-include-filter':
-            for file_name in junit_paras[para_name]:
-                device.push_file(file_name, include_file)
-                device.execute_shell_command(
-                    'chown -R shell:shell %s' % path)
-            ret_str.append(prefix_char + " ".join(['testFile', include_file]))
-        elif para_name.strip() == "test-file-exclude-filter":
-            for file_name in junit_paras[para_name]:
-                device.push_file(file_name, include_file)
-                device.execute_shell_command(
-                    'chown -R shell:shell %s' % path)
-            ret_str.append(prefix_char + " ".join(['notTestFile',
-                                                   exclude_file]))
-        elif para_name.strip() == "test" or para_name.strip() == "class":
-            result = _get_class(junit_paras, prefix_char, para_name.strip())
-            ret_str.append(result)
-        elif para_name.strip() == "include-annotation":
-            ret_str.append(prefix_char + " ".join(
-                ['annotation', ",".join(junit_paras[para_name])]))
-        elif para_name.strip() == "exclude-annotation":
-            ret_str.append(prefix_char + " ".join(
-                ['notAnnotation', ",".join(junit_paras[para_name])]))
-        else:
-            ret_str.append(prefix_char + " ".join(
-                [para_name, ",".join(junit_paras[para_name])]))
-
-    return " ".join(ret_str)
-
 
 def timeout_callback(proc):
     try:
