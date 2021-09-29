@@ -648,7 +648,7 @@ class AppInstallKit(ITestKit):
 
 
 def remount(device):
-    cmd = "mount -o rw,remount /" \
+    cmd = "shell mount -o rw,remount /" \
         if device.usb_type == DeviceConnectorType.hdc else "remount"
     device.hdc_command(cmd)
 

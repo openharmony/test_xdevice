@@ -38,14 +38,12 @@ TestSetSource = namedtuple('TestSetSource', 'set')
 TestSource = namedtuple('TestSource', 'source_file source_string config_file '
                                       'test_name test_type module_name')
 
-TEST_TYPE_DICT = {"DEX": DeviceTestType.dex_test,
-                  "HAP": DeviceTestType.hap_test,
+TEST_TYPE_DICT = {"HAP": DeviceTestType.hap_test,
                   "PYT": HostDrivenTestType.device_test,
                   "JST": DeviceTestType.jsunit_test,
                   "CXX": DeviceTestType.cpp_test,
                   "BIN": DeviceTestType.lite_cpp_test}
-EXT_TYPE_DICT = {".dex": DeviceTestType.dex_test,
-                 ".hap": DeviceTestType.hap_test,
+EXT_TYPE_DICT = {".hap": DeviceTestType.hap_test,
                  ".py": HostDrivenTestType.device_test,
                  ".js": DeviceTestType.jsunit_test,
                  ".bin": DeviceTestType.lite_cpp_test,
