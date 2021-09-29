@@ -124,7 +124,6 @@ class DeviceTestType(object):
     DeviceTestType enumeration
     """
     cpp_test = "CppTest"
-    dex_test = "DexTest"
     hap_test = "HapTest"
     junit_test = "JUnitTest"
     jsunit_test = "JSUnitTest"
@@ -155,7 +154,6 @@ class HostDrivenTestType(object):
 
 TEST_DRIVER_SET = {
     DeviceTestType.cpp_test,
-    DeviceTestType.dex_test,
     DeviceTestType.hap_test,
     DeviceTestType.junit_test,
     DeviceTestType.jsunit_test,
