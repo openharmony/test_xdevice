@@ -174,7 +174,7 @@ class Device(IDevice):
         """
         Hdc command, ddmlib function.
         """
-        command = "getparam %s" % prop_name
+        command = "param get %s" % prop_name
         stdout = self.execute_shell_command(
             command, timeout=5 * 1000, output_flag=False, retry=retry,
             abort_on_exception=abort_on_exception).strip()
