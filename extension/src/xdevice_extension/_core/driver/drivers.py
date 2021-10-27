@@ -1610,9 +1610,9 @@ class JSUnitTestDriver(IDriver):
             self.result = check_result_report(
                 request.config.report_path, self.result, self.error_message)
 
-    def generate_console_output(self, device_log_file, request):
+    def generate_console_output(self, device_log_file, request, timeout):
         LOG.info("prepare to read device log, may wait some time")
-        result_message = self.read_device_log(device_log_file, "")
+        result_message = self.read_device_log(device_log_file, timeout)
 
         report_name = request.get_module_name()
         parsers = get_plugin(
@@ -1632,21 +1632,26 @@ class JSUnitTestDriver(IDriver):
         handler = ShellHandler(parser_instances)
         process_command_ret(result_message, handler)
 
-    def read_device_log(self, device_log_file, result_message):
-        device_log_file_open = os.open(device_log_file, os.O_RDONLY,
-                                       stat.S_IWUSR | stat.S_IRUSR)
-
-        with os.fdopen(device_log_file_open, "r", encoding='utf-8') \
-                as file_read_pipe:
-            while True:
-                data = file_read_pipe.readline()
-                if not data or not data.strip():
-                    break
-                # only filter JSApp log
-                if data.find("JSApp:") != -1:
-                    result_message += data
-                    if data.find("[end] run suites end") != -1:
-                        break
+    def read_device_log(self, device_log_file, timeout=60):
+        LOG.info("The timeout is {} seconds".format(timeout))
+        while time.time() - self.start_time <= timeout:
+            result_message = ""
+            with open(device_log_file, "r", encoding='utf-8') \
+                    as file_read_pipe:
+                lines = file_read_pipe.readlines()
+                for line in lines:
+                    if line.find("JSApp:") != -1:
+                        result_message += line
+                    if "[end] run suites end" in line:
+                        LOG.info("Find the end mark then analysis result")
+                        return result_message
+                # if test not finished, wait 5 seconds
+                else:
+                    LOG.info("did not find the end mark then wait 5 seconds")
+                    time.sleep(5)
+        else:
+            LOG.error("Hjsunit run timeout {}s reached".format(timeout))
+            raise RuntimeError("Hjsunit run timeout!")
         return result_message
 
     def _run_jsunit(self, config_file, request):
@@ -1674,30 +1679,29 @@ class JSUnitTestDriver(IDriver):
 
             hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                                  0o755)
+            # execute test case
+            command = "shell aa start -d 123 -a %s -b %s" \
+                      % (ability_name, package)
+
+            result_value = self.config.device.hdc_command(command)
+            if result_value and "success" in str(result_value).lower():
+                setattr(self, "start_success", True)
+                LOG.info("execute %s's testcase success. result value=%s"
+                         % (package, result_value))
+            else:
+                LOG.info("execute %s's testcase failed. result value=%s"
+                         % (package, result_value))
+                raise RuntimeError("hjsunit test run error happened!")
 
             with os.fdopen(hilog_open, "a") as hilog_file_pipe:
                 self.config.device.start_catch_device_log(hilog_file_pipe)
-                # execute test case
-                command = "shell aa start -d 123 -a %s -b %s" \
-                          % (ability_name, package)
 
-                result_value = self.config.device.hdc_command(command)
-                if "success" in str(result_value).lower():
-                    setattr(self, "start_success", True)
-                    LOG.info("execute %s's testcase success. result value=%s"
-                             % (package, result_value))
-                else:
-                    LOG.info("execute %s's testcase failed. result value=%s"
-                             % (package, result_value))
-                self.start_time = time.time()
-                timeout_config = get_config_value('test-timeout',
-                                                  json_config.get_driver(),
-                                                  False, 60000)
-                timeout = int(timeout_config)/1000
-                LOG.info("wait {}s to keep app log".format(timeout))
-                time.sleep(timeout)
-                hilog_file_pipe.flush()
-            self.generate_console_output(hilog, request)
+            self.start_time = time.time()
+            timeout_config = get_config_value('test-timeout',
+                                              json_config.get_driver(),
+                                              False, 60000)
+            timeout = int(timeout_config) / 1000
+            self.generate_console_output(hilog, request, timeout)
         finally:
             do_module_kit_teardown(request)
 
