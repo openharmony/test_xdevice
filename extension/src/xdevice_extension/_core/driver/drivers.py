@@ -1684,7 +1684,8 @@ class JSUnitTestDriver(IDriver):
                       % (ability_name, package)
 
             result_value = self.config.device.hdc_command(command)
-            if result_value and "success" in str(result_value).lower():
+            if result_value and "start ability successfully" in\
+                    str(result_value).lower():
                 setattr(self, "start_success", True)
                 LOG.info("execute %s's testcase success. result value=%s"
                          % (package, result_value))
