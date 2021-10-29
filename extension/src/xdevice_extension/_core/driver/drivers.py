@@ -1636,8 +1636,8 @@ class JSUnitTestDriver(IDriver):
         LOG.info("The timeout is {} seconds".format(timeout))
         while time.time() - self.start_time <= timeout:
             result_message = ""
-            with open(device_log_file, "r", encoding='utf-8') \
-                    as file_read_pipe:
+            with open(device_log_file, "r", encoding='utf-8',
+                     errors='ignore') as file_read_pipe:
                 lines = file_read_pipe.readlines()
                 for line in lines:
                     if line.find("JSApp:") != -1:
