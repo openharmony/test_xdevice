@@ -1636,8 +1636,8 @@ class JSUnitTestDriver(IDriver):
         LOG.info("The timeout is {} seconds".format(timeout))
         while time.time() - self.start_time <= timeout:
             result_message = ""
-            with open(device_log_file, "r", encoding='utf-8') \
-                    as file_read_pipe:
+            with open(device_log_file, "r", encoding='utf-8',
+                     errors='ignore') as file_read_pipe:
                 lines = file_read_pipe.readlines()
                 for line in lines:
                     if line.find("JSApp:") != -1:
@@ -1684,7 +1684,8 @@ class JSUnitTestDriver(IDriver):
                       % (ability_name, package)
 
             result_value = self.config.device.hdc_command(command)
-            if result_value and "success" in str(result_value).lower():
+            if result_value and "start ability successfully" in\
+                    str(result_value).lower():
                 setattr(self, "start_success", True)
                 LOG.info("execute %s's testcase success. result value=%s"
                          % (package, result_value))
