@@ -560,8 +560,8 @@ class AppInstallKit(ITestKit):
                 LOG.error("The app file {} does not exist".format(app))
                 continue
             if app_file.endswith(".hap"):
-                # use app install command directly
-                device.hdc_command("app install {}".format(app_file))
+                # use install command directly
+                device.hdc_command("install {}".format(app_file))
             else:
                 result = device.install_package(
                     app_file, get_install_args(
@@ -579,7 +579,7 @@ class AppInstallKit(ITestKit):
                 app_name = get_app_name(app)
 
                 if app_name:
-                    device.hdc_command("shell bm uninstall -n {}".
+                    device.hdc_command("uninstall -n {}".
                                        format(app_name))
                     time.sleep(20)
                 else:
