@@ -38,7 +38,7 @@ from xdevice_extension._core.utils import convert_serial
 from xdevice_extension._core.constants import DeviceConnectorType
 
 __all__ = ["Device"]
-TIMEOUT = 300 * 1000
+TIMEOUT = 90 * 1000
 RETRY_ATTEMPTS = 2
 DEFAULT_UNAVAILABLE_TIMEOUT = 20 * 1000
 BACKGROUND_TIME = 2 * 60 * 1000
