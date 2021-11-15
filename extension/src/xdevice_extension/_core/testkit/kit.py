@@ -579,7 +579,7 @@ class AppInstallKit(ITestKit):
                 app_name = get_app_name(app)
 
                 if app_name:
-                    device.hdc_command("uninstall -n {}".
+                    device.hdc_command("uninstall {}".
                                        format(app_name))
                     time.sleep(20)
                 else:
