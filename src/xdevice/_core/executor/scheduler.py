@@ -1022,8 +1022,11 @@ class Scheduler(object):
 
     @classmethod
     def upload_report_end(cls):
+        LOG.info("Upload report end")
+        if Scheduler.proxy is not None:
+            Scheduler.proxy.report_end()
+            return
         from agent.factory import report_end
-        LOG.info("upload report end")
         report_end()
 
     @classmethod
