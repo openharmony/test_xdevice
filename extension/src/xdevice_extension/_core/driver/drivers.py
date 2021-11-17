@@ -1597,7 +1597,14 @@ class JSUnitTestDriver(IDriver):
                     request.root.source.source_string, error_no="00110")
 
             LOG.debug("Test case file path: %s" % suite_file)
-            self.config.device.hdc_command("shell hilog -r")
+            # avoid hilog service stuck issue
+            self.config.device.hdc_command("shell stop_service hilogd",
+                                           timeout=30 * 1000)
+            self.config.device.hdc_command("shell start_service hilogd",
+                                           timeout=30 * 1000)
+            time.sleep(10)
+
+            self.config.device.hdc_command("shell hilog -r", timeout=30 * 1000)
             self._run_jsunit(config_file, request)
         except Exception as exception:
             self.error_message = exception
