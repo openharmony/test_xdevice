@@ -515,7 +515,7 @@ class RemoteCppTestRunner:
         LOG.info("The apply execute command is {}".format(chmod_cmd))
         self.config.device.hdc_command(chmod_cmd, timeout=30*1000)
         # dry run command
-        dry_command = ".{}/{} {}".format(self.config.target_test_path,
+        dry_command = "{}/{} {}".format(self.config.target_test_path,
                                          self.config.module_name,
                                          self.get_args_command())
         pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
@@ -532,7 +532,7 @@ class RemoteCppTestRunner:
     def run(self, listener):
         handler = self._get_shell_handler(listener)
         pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
-        command = ".{}/{} {}".format(self.config.target_test_path,
+        command = "{}/{} {}".format(self.config.target_test_path,
                                          self.config.module_name,
                                          self.get_args_command())
         command = "%s %s" % (pre_cmd, command)
@@ -551,7 +551,7 @@ class RemoteCppTestRunner:
             handler = self._get_shell_handler(listener_copy)
             try:
                 pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
-                command = ".{}/{} {}".format(self.config.target_test_path,
+                command = "{}/{} {}".format(self.config.target_test_path,
                                              self.config.module_name,
                                              self.get_args_command())
                 command = "%s %s" % (pre_cmd, command)
