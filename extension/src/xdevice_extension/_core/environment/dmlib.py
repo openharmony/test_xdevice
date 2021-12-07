@@ -775,7 +775,7 @@ class HdcHelper:
                                 timeout=timeout)
         HdcHelper.handle_shake(sock, device.device_sn)
         request = HdcHelper.form_hdc_request("file recv %s %s" %
-                                             (local, remote))
+                                             (remote, local))
         HdcHelper.write(sock, request)
         reply = HdcHelper.read(sock, 4)
         length = struct.unpack("!I", reply)[0]
