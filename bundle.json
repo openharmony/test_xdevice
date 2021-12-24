@@ -39,7 +39,7 @@
         "subsystem": "xdevice\r\ntest",
         "syscap": [],
         "features": [],
-        "adated_system_type": [
+        "adapted_system_type": [
             "min",
             "small",
             "standard"
