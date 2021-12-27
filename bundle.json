@@ -40,7 +40,7 @@
         "syscap": [],
         "features": [],
         "adapted_system_type": [
-            "min",
+            "mini",
             "small",
             "standard"
         ],
