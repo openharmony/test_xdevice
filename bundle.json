@@ -1,0 +1,59 @@
+{
+    "name": "@ohos/test_xdevice",
+    "version": "",
+    "description": "提供被测设备管理，测试工具配置管理，用例调度框架，报告模板管理",
+    "homePage": "https://gitee.com/openharmony",
+    "license": "Apache V2",
+    "repository": "https://gitee.com/openharmony/test_xdevice",
+    "domain": "os",
+    "language": "",
+    "publishAs": "code-segment",
+    "private": false,
+    "scripts": {},
+    "tags": [
+        "test"
+    ],
+    "keywords": [
+        "test",
+        "xdevice"
+    ],
+    "envs": [],
+    "dirs": [],
+    "author": {
+        "name": "",
+        "email": "",
+        "url": ""
+    },
+    "contributors": [
+        {
+            "name": "",
+            "email": "",
+            "url": ""
+        }
+    ],
+    "segment": {
+        "destPath": "test/xdevice"
+    },
+    "component": {
+        "name": "test_xdevice",
+        "subsystem": "xdevice\r\ntest",
+        "syscap": [],
+        "features": [],
+        "adapted_system_type": [
+            "mini",
+            "small",
+            "standard"
+        ],
+        "rom": "",
+        "ram": "",
+        "deps": {
+            "components": [],
+            "third_party": []
+        },
+        "build": {
+            "sub_component": [],
+            "inner_kits": [],
+            "test": []
+        }
+    }
+}
