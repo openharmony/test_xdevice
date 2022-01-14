@@ -348,6 +348,11 @@ class MountKit(ITestKit):
             # local copy
             else:
                 for count in range(1, 4):
+                    try:
+                        os.remove(os.path.join(remote_info.get("dir"),
+                                               os.path.basename(_file)))
+                    except Exception as _:
+                        pass
                     shutil.copy(_file, remote_info.get("dir"))
                     if check_server_file(_file, remote_info.get("dir")):
                         break
