@@ -84,7 +84,7 @@ class Console(object):
         """
         Main xDevice console providing user with the interface to interact
         """
-        if sys.version_info.major < '3' or sys.version_info.minor < '7':
+        if sys.version_info.major < 3 or sys.version_info.minor < 7:
             LOG.error("Please use python 3.7 or higher version to "
                       "start project")
             sys.exit(0)
