@@ -1641,12 +1641,18 @@ class JSUnitTestDriver(IDriver):
 
     def read_device_log(self, device_log_file, timeout=60):
         LOG.info("The timeout is {} seconds".format(timeout))
+        result_message = ""
         while time.time() - self.start_time <= timeout:
-            result_message = ""
+            
             with open(device_log_file, "r", encoding='utf-8',
                      errors='ignore') as file_read_pipe:
-                lines = file_read_pipe.readlines()
-                for line in lines:
+                while True:
+                    try:
+                        line = file_read_pipe.readline()
+                    except (UnicodeDecodeError, UnicodeError) as error:
+                            LOG.warning("While read log file: %s" % error)
+                    if not line :
+                        break
                     if line.find("JSApp:") != -1:
                         result_message += line
                     if "[end] run suites end" in line:
@@ -1659,7 +1665,6 @@ class JSUnitTestDriver(IDriver):
         else:
             LOG.error("Hjsunit run timeout {}s reached".format(timeout))
             raise RuntimeError("Hjsunit run timeout!")
-        return result_message
 
     def _run_jsunit(self, config_file, request):
         try:
