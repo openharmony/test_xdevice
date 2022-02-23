@@ -1653,7 +1653,7 @@ class JSUnitTestDriver(IDriver):
                             LOG.warning("While read log file: %s" % error)
                     if not line :
                         break
-                    if line.find("JSApp:") != -1:
+                    if line.lower().find("jsapp:") != -1:
                         result_message += line
                     if "[end] run suites end" in line:
                         LOG.info("Find the end mark then analysis result")
