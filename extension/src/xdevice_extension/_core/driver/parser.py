@@ -53,7 +53,7 @@ _START_JSUNIT_SUITE_END_MARKER = "[suite end]"
 _END_JSUNIT_RUN_MARKER = "[end] run suites end"
 _PASS_JSUNIT_MARKER = "[pass]"
 _FAIL_JSUNIT_MARKER = "[fail]"
-_ACE_LOG_MARKER = "app Log"
+_ACE_LOG_MARKER = "jsapp"
 
 LOG = platform_logger("Parser")
 
@@ -638,7 +638,7 @@ class JSUnitParser(IParser):
     def parse(self, line):
         line = line.strip()
         if (self.state_machine.suites_is_started() or line.find(
-                _START_JSUNIT_RUN_MARKER) != -1) and line.find(
+                _START_JSUNIT_RUN_MARKER) != -1) and line.lower().find(
                 _ACE_LOG_MARKER) != -1:
             if line.find(_START_JSUNIT_RUN_MARKER) != -1:
                 self.handle_suites_started_tag()
@@ -656,7 +656,10 @@ class JSUnitParser(IParser):
     def parse_test_description(self, message):
         pattern = r"\[(pass|fail)\]"
         year = time.strftime("%Y")
-        filter_message = message.split("app Log:")[1].strip()
+        match_list = ["app Log:", "JSApp:", "JsApp:"]
+        for keyword in match_list:
+            if keyword in message:
+                filter_message = message.split(r"{0}".format(keyword))[1].strip()
         end_time = "%s-%s" % \
                    (year, re.match(self.pattern, message).group().strip())
         start_time = "%s-%s" % \
