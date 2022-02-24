@@ -660,6 +660,7 @@ class JSUnitParser(IParser):
         for keyword in match_list:
             if keyword in message:
                 filter_message = message.split(r"{0}".format(keyword))[1].strip()
+                break
         end_time = "%s-%s" % \
                    (year, re.match(self.pattern, message).group().strip())
         start_time = "%s-%s" % \
