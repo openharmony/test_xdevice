@@ -1641,9 +1641,9 @@ class JSUnitTestDriver(IDriver):
 
     def read_device_log(self, device_log_file, timeout=60):
         LOG.info("The timeout is {} seconds".format(timeout))
-        result_message = ""
+        
         while time.time() - self.start_time <= timeout:
-            
+            result_message = ""
             with open(device_log_file, "r", encoding='utf-8',
                      errors='ignore') as file_read_pipe:
                 while True:
