@@ -135,6 +135,7 @@ class DeviceTestType(object):
     lite_cpp_test = "LiteUnitTest"
     open_source_test = "OpenSourceTest"
     build_only_test = "BuildOnlyTestLite"
+    ltp_posix_test = "LtpPosixTest"
 
 
 @dataclass
@@ -205,6 +206,7 @@ class CommonParserType:
     cpptest = "CppTest"
     cpptest_list = "CppTestList"
     junit = "JUnit"
+    ltp_posix = "LtpPosixTest"
 
 
 @dataclass
