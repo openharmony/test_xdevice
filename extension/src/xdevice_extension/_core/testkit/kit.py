@@ -131,6 +131,7 @@ class PushKit(ITestKit):
         LOG.debug("PushKit setup, device:{}".format(device.device_sn))
         for command in self.pre_push:
             run_command(device, command)
+        dst = None
         for push_info in self.push_list:
             files = re.split('->|=>', push_info)
             if len(files) != 2:
@@ -152,10 +153,25 @@ class PushKit(ITestKit):
                     LOG.warning(error, error_no=error.error_no)
                     continue
             remount(device)
-            device.hdc_command("file send {} {}".format(real_src_path, dst))
-            LOG.debug("Push file finished from {} to {}".format(src, dst))
+            # hdc don't support push directory now
+            if os.path.isdir(real_src_path):
+                device.hdc_command("shell mkdir {}".format(dst))
+                for root, _, files in os.walk(real_src_path):
+                    for file in files:
+                        device.hdc_command(
+                            "file send {} {}".format(os.path.join(root, file),
+                                                     dst))
+                        LOG.debug(
+                            "Push file finished from {} to {}".format(
+                                os.path.join(root, file)， dst))
+                        self.pushed_file.append(file)
+            else:
+                device.hdc_command("file send {} {}".format(real_src_path, dst))
+                LOG.debug("Push file finished from {} to {}".format(src, dst))
+                self.pushed_file.append(real_src_path)
         for command in self.post_push:
             run_command(device, command)
+        return self.pushed_file, dst
 
     def add_pushed_dir(self, src, dst):
         for root, _, files in os.walk(src):
