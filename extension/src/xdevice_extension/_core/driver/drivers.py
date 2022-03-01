@@ -1742,6 +1742,119 @@ class JSUnitTestDriver(IDriver):
         return self.result if os.path.exists(self.result) else ""
 
 
+@Plugin(type=Plugin.DRIVER, id=DeviceTestType.ltp_posix_test)
+class LTPPosixTestDriver(IDriver):
+    def __init__(self):
+        self.timeout = 80 * 1000
+        self.start_time = None
+        self.result = ""
+        self.error_message = ""
+        self.kits = []
+        self.config = None
+
+    def __check_environment__(self, device_options):
+        pass
+
+    def __check_config__(self, config):
+        pass
+
+    def __execute__(self, request):
+        try:
+            LOG.debug("Start execute xdevice extension LTP Posix Test")
+            self.result = os.path.join(
+                request.config.report_path, "result",
+                '.'.join((request.get_module_name(), "xml")))
+            self.config = request.config
+            self.config.device = request.config.environment.devices[0]
+
+            config_file = request.root.source.config_file
+            suite_file = request.root.source.source_file
+
+            if not suite_file:
+                raise ParamError(
+                    "test source '%s' not exists" %
+                    request.root.source.source_string, error_no="00110")
+
+            LOG.debug("Test case file path: %s" % suite_file)
+            # avoid hilog service stuck issue
+            self.config.device.hdc_command("shell stop_service hilogd",
+                                           timeout=30 * 1000)
+            self.config.device.hdc_command("shell start_service hilogd",
+                                           timeout=30 * 1000)
+            time.sleep(10)
+
+            self.config.device.hdc_command("shell hilog -r", timeout=30 * 1000)
+            self._run_posix(config_file, request)
+        except Exception as exception:
+            self.error_message = exception
+            if not getattr(exception, "error_no", ""):
+                setattr(exception, "error_no", "03409")
+            LOG.exception(self.error_message, exc_info=True, error_no="03409")
+            raise exception
+        finally:
+            self.config.device.stop_catch_device_log()
+            self.result = check_result_report(
+                request.config.report_path, self.result, self.error_message)
+
+    def _run_posix(self, config_file, request):
+        try:
+            if not os.path.exists(config_file):
+                LOG.error("Error: Test cases don't exist %s." % config_file)
+                raise ParamError(
+                    "Error: Test cases don't exist %s." % config_file,
+                    error_no="00102")
+
+            json_config = JsonParser(config_file)
+            self.kits = get_kit_instances(json_config,
+                                          self.config.resource_path,
+                                          self.config.testcases_path)
+            self.config.device.hdc_command("target mount")
+            test_list = None
+            dst = None
+            for kit in self.kits:
+                test_list, dst = kit.__setup__(request.config.device,
+                                               request=request)
+            # apply execute right
+            self.config.device.hdc_command("shell chmod -R 777 {}".format(dst))
+
+            hilog = get_device_log_file(
+                request.config.report_path,
+                request.config.device.__get_serial__() + "_" + request.
+                get_module_name(),
+                "device_hilog")
+
+            hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                                 0o755)
+            with os.fdopen(hilog_open, "a") as hilog_file_pipe:
+                for test_bin in test_list:
+                    if not test_bin.endswith(".run-test"):
+                        continue
+                    listeners = request.listeners
+                    for listener in listeners:
+                        listener.device_sn = self.config.device.device_sn
+                    parsers = get_plugin(Plugin.PARSER,
+                                         "OpenSourceTest")
+                    parser_instances = []
+                    for parser in parsers:
+                        parser_instance = parser.__class__()
+                        parser_instance.suite_name = request.root.source.\
+                            test_name
+                        parser_instance.test_name = test_bin.replace("./", "")
+                        parser_instance.listeners = listeners
+                        parser_instances.append(parser_instance)
+                    self.handler = ShellHandler(parser_instances)
+                    result_message = self.config.device.hdc_command(
+                        "shell {}{}".format(dst, test_bin))
+                    LOG.info("get result from command {}".
+                             format(result_message))
+                    process_command_ret(result_message, self.handler)
+        finally:
+            do_module_kit_teardown(request)
+
+    def __result__(self):
+        return self.result if os.path.exists(self.result) else ""
+
+
 def disable_keyguard(device):
     _unlock_screen(device)
     _unlock_device(device)
