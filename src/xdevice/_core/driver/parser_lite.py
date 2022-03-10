@@ -1094,7 +1094,7 @@ class ShellHandler:
             self.unfinished_line = lines[-1]
             # not return the tail element of this list contains unfinished str,
             # so we set position -1
-            return lines[:-1]
+            return lines
 
     def __read__(self, output):
         lines = self._process_output(output)
