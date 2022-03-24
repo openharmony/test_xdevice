@@ -34,7 +34,7 @@ from xdevice import ResultCode
 from xdevice_extension._core.constants import CommonParserType
 
 __all__ = ["CppTestParser", "CppTestListParser",
-           "JunitParser", "JSUnitParser"]
+           "JunitParser", "JSUnitParser", "OHKernelTestParser"]
 
 _INFORMATIONAL_MARKER = "[----------]"
 _START_TEST_RUN_MARKER = "[==========] Running"
@@ -56,6 +56,15 @@ _FAIL_JSUNIT_MARKER = "[fail]"
 _ACE_LOG_MARKER = "jsapp"
 
 LOG = platform_logger("Parser")
+"""
+OpenHarmony Kernel Test
+"""
+RUNTEST_TEST = "runtest test"
+START_TO_TEST = "Start to test"
+FINISHED_TO_TEST = "Finished to test"
+TIMEOUT_TESTCASES = "Timeout testcases"
+FAIL_DOT = "FAIL."
+PASS_DOT = "PASS."
 
 
 @Plugin(type=Plugin.PARSER, id=CommonParserType.cpptest)
@@ -659,7 +668,8 @@ class JSUnitParser(IParser):
         match_list = ["app Log:", "JSApp:", "JsApp:"]
         for keyword in match_list:
             if keyword in message:
-                filter_message = message.split(r"{0}".format(keyword))[1].strip()
+                filter_message = message.split(
+                    r"{0}".format(keyword))[1].strip()
                 break
         end_time = "%s-%s" % \
                    (year, re.match(self.pattern, message).group().strip())
@@ -772,5 +782,3 @@ class JSUnitParser(IParser):
                 "%s\r\n" % self.state_machine.test().stacktrace
         self.state_machine.test().stacktrace = \
             ''.join((self.state_machine.test().stacktrace, message))
-
-
