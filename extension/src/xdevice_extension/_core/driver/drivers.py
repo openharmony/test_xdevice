@@ -16,7 +16,10 @@
 # limitations under the License.
 #
 
+from cgitb import handler
+from logging import exception
 import os
+from sys import exc_info
 import time
 import json
 import shutil
@@ -45,6 +48,7 @@ from xdevice import do_module_kit_teardown
 from xdevice_extension._core.constants import DeviceTestType
 from xdevice_extension._core.constants import DeviceConnectorType
 from xdevice_extension._core.constants import CommonParserType
+from xdevice_extension._core.constants import FilePermission
 from xdevice_extension._core.environment.dmlib import DisplayOutputReceiver
 from xdevice_extension._core.exception import ShellCommandUnresponsiveException
 from xdevice_extension._core.exception import HapNotSupportTest
@@ -59,7 +63,7 @@ from xdevice_extension._core.testkit.kit import gtest_para_parse
 from xdevice_extension._core.environment.dmlib import process_command_ret
 
 
-__all__ = ["CppTestDriver", "HapTestDriver",
+__all__ = ["CppTestDriver", "HapTestDriver", "OHKernelTestDriver"
            "JSUnitTestDriver", "JUnitTestDriver", "RemoteTestRunner",
            "RemoteDexRunner", "disable_keyguard"]
 LOG = platform_logger("Drivers")
@@ -516,8 +520,8 @@ class RemoteCppTestRunner:
         self.config.device.hdc_command(chmod_cmd, timeout=30*1000)
         # dry run command
         dry_command = "{}/{} {}".format(self.config.target_test_path,
-                                         self.config.module_name,
-                                         self.get_args_command())
+                                        self.config.module_name,
+                                        self.get_args_command())
         pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
         command = "%s %s" % (pre_cmd, dry_command)
         LOG.info("The dry_command execute command is {}".format(command))
@@ -533,8 +537,8 @@ class RemoteCppTestRunner:
         handler = self._get_shell_handler(listener)
         pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
         command = "{}/{} {}".format(self.config.target_test_path,
-                                         self.config.module_name,
-                                         self.get_args_command())
+                                    self.config.module_name,
+                                    self.get_args_command())
         command = "%s %s" % (pre_cmd, command)
         LOG.debug("run command is: %s" % command)
         output = start_standing_subprocess(command.split(), return_result=True)
@@ -552,8 +556,8 @@ class RemoteCppTestRunner:
             try:
                 pre_cmd = "hdc_std -t %s shell " % self.config.device.device_sn
                 command = "{}/{} {}".format(self.config.target_test_path,
-                                             self.config.module_name,
-                                             self.get_args_command())
+                                            self.config.module_name,
+                                            self.get_args_command())
                 command = "%s %s" % (pre_cmd, command)
                 LOG.debug("rerun command is: %s" % command)
                 output = start_standing_subprocess(command.split(),
@@ -1130,10 +1134,10 @@ class RemoteDexRunner:
                   "ohos.testkit.runner.JUnitRunner {junit_para}{arg_list}" \
                   " --rawLog true --coverage false " \
                   "--classpathToScan {remote_path}/{module_name}".format(
-                   remote_path=self.config.remote_path,
-                   module_name=self.config.module_name,
-                   junit_para=self.junit_para,
-                   arg_list=self.get_args_command())
+                      remote_path=self.config.remote_path,
+                      module_name=self.config.module_name,
+                      junit_para=self.junit_para,
+                      arg_list=self.get_args_command())
 
         try:
             self.config.device.execute_shell_command(
@@ -1167,9 +1171,9 @@ class RemoteDexRunner:
                           "--rawLog true --coverage false " \
                           "--classpathToScan " \
                           "{remote_path}/{module_name}".format(
-                           remote_path=self.config.remote_path,
-                           module_name=self.config.module_name,
-                           arg_list=self.get_args_command())
+                              remote_path=self.config.remote_path,
+                              module_name=self.config.module_name,
+                              arg_list=self.get_args_command())
                 self.config.device.execute_shell_command(
                     command, timeout=self.config.timeout,
                     receiver=handler, retry=0)
@@ -1641,17 +1645,17 @@ class JSUnitTestDriver(IDriver):
 
     def read_device_log(self, device_log_file, timeout=60):
         LOG.info("The timeout is {} seconds".format(timeout))
-        
+
         while time.time() - self.start_time <= timeout:
             result_message = ""
             with open(device_log_file, "r", encoding='utf-8',
-                     errors='ignore') as file_read_pipe:
+                      errors='ignore') as file_read_pipe:
                 while True:
                     try:
                         line = file_read_pipe.readline()
                     except (UnicodeDecodeError, UnicodeError) as error:
-                            LOG.warning("While read log file: %s" % error)
-                    if not line :
+                        LOG.warning("While read log file: %s" % error)
+                    if not line:
                         break
                     if line.lower().find("jsapp:") != -1:
                         result_message += line
@@ -1853,6 +1857,169 @@ class LTPPosixTestDriver(IDriver):
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""
+
+
+@Plugin(type=Plugin.DRIVER, id=DeviceTestType.oh_kernel_test)
+class OHKernelTestDriver(IDriver):
+    """
+        OpenHarmonyKernelTest
+    """
+
+    def __init__(self):
+        self.timeout = 30*1000
+        self.result = ""
+        self.error_message = ""
+        self.kits = []
+        self.config = None
+        self.runner = None
+
+    def __check_environment__(self, device_options):
+        pass
+
+    def __check_config__(self, config):
+        pass
+
+    def __execute__(self, request):
+        try:
+            LOG.debug("Start to Execute OpenHarmony Kernel Test")
+
+            self.config = request.config
+            self.config.device = request.config.environment.devices[0]
+
+            config_file = request.root.source.config_file
+            self.result = "%s.xml" % \
+                          os.path.join(request.config.report_path,
+                                       "result", request.get_module_name())
+
+            device_log = get_device_log_file(
+                request.config.report_path,
+                request.config.device.__get_serial__(),
+                "device_log"
+            )
+            hilog = get_device_log_file(
+                request.config.report_path,
+                request.config.device.__get_serial__(),
+                "device_hilog"
+            )
+
+            device_log_open = os.open(
+                device_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, FilePermission.mode_755)
+            hilog_open = os.open(
+                hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND, FilePermission.mode_755)
+            with os.fdopen(device_log_open, "a") as log_file_pipe,\
+                    os.fdopen(hilog_open, "a")as hilog_file_pipe:
+                self.config.device.start_catch_device_log(
+                    log_file_pipe, hilog_file_pipe)
+                self._run_oh_kernel(config_file, request.listeners, request)
+                log_file_pipe.flush()
+                hilog_file_pipe.flush()
+        except Exception as exception:
+            self.error_message = exception
+            if not getattr(exception, "error_no", ""):
+                setattr(exception, "error_no", "03409")
+            LOG.exception(self.error_message, exc_info=False, error_no="03409")
+            raise exception
+        finally:
+            do_module_kit_teardown(request)
+            self.config.device.stop_catch_device_log()
+            self.result = check_result_report(
+                request.config.report_path, self.result, self.error_message)
+
+    def _run_oh_kernel(self, config_file, listeners=None, request=None):
+        try:
+
+            json_config = JsonParser(config_file)
+            kits = get_kit_instances(json_config, self.config.resource_path,
+                                     self.config.testcases_path)
+
+            self._get_driver_config(json_config)
+            do_module_kit_setup(request, kits)
+            self.runner = OHKernelTestRunner(self.config)
+
+            self.runner.suite_name = request.get_module_name()
+            self.runner.run(listeners)
+
+        finally:
+            do_module_kit_teardown(request)
+
+    def _get_driver_config(self, json_config):
+        LOG.info("_get_driver_config")
+        d = dict(json_config.get_driver())
+        for key in d.keys():
+            LOG.info("%s:%s" % (key, d[key]))
+        target_test_path = get_config_value(
+            'native-test-device-path', json_config.get_driver(), False)
+        test_suite_name = get_config_value(
+            'test-suite-name', json_config.get_driver(), False)
+        test_suites_list = get_config_value(
+            'test-suites-list', json_config.get_driver(), False)
+        timeout_limit = get_config_value(
+            'timeout-limit', json_config.get_driver(), False)
+        conf_file = get_config_value(
+            'conf-file', json_config.get_driver(), False)
+        self.config.arg_list = {}
+        if target_test_path:
+            self.config.target_test_path = target_test_path
+        if test_suite_name:
+            self.config.arg_list["test-suite-name"] = test_suite_name
+        if test_suites_list:
+            self.config.arg_list["test-suites-list"] = test_suites_list
+
+        if timeout_limit:
+            self.config.arg_list['timeout-limit'] = timeout_limit
+        if conf_file:
+            self.config.arg_list["conf-file"] = conf_file
+        timeout_config = get_config_value(
+            'shell-timeout', json_config.get_driver(), False)
+        if timeout_config:
+            self.config.timeout = int(timeout_config)
+        else:
+            self.config.timeout = TIME_OUT
+
+    def __result__(self):
+        return self.result if os.path.exists(self.result) else ""
+
+
+class OHKernelTestRunner:
+    def __init__(self, config):
+        self.suite_name = None
+        self.config = config
+        self.arg_list = config.arg_list
+
+    def run(self, listeners):
+        handler = self._get_shell_handler(listeners)
+        command = "cd %s; chmod +x *; sh runtest test %s" % (
+            self.config.target_test_path, self.get_args_command()
+
+        )
+        self.config.device.execute_shell_command(
+            command, timeout=self.config.timeout, receiver=handler, retry=0
+        )
+
+    def _get_shell_handler(self, listeners):
+        parsers = get_plugin(Plugin.PARSER, CommonParserType.oh_kernel_test)
+        if parsers:
+            parsers = parsers[:1]
+        parser_instances = []
+        for parser in parsers:
+            parser_instance = parser.__class__()
+            parser_instance.suites_name = self.suite_name
+            parser_instance.listeners = listeners
+            parser_instances.append(parser_instances)
+        handler = ShellHandler(parser_instances)
+        return handler
+
+    def get_args_command(self):
+        args_commands = ""
+        for key, value in self.arg_list.items():
+            if key == "test-suite-name" or key == "test-suites-list":
+                args_commands = "%s -t %s" % (args_commands, value)
+            elif key == "conf-file":
+                args_commands = "%s -n %s" % (args_commands, value)
+            elif key == "timeout-limit":
+                args_commands = "%s -l %s" % (args_commands, value)
+
+        return args_commands
 
 
 def disable_keyguard(device):
