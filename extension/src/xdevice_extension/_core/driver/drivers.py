@@ -1907,7 +1907,7 @@ class OHKernelTestDriver(IDriver):
             hilog_open = os.open(
                 hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND, FilePermission.mode_755)
             with os.fdopen(device_log_open, "a") as log_file_pipe,\
-                    os.fdopen(hilog_open, "a")as hilog_file_pipe:
+                    os.fdopen(hilog_open, "a") as hilog_file_pipe:
                 self.config.device.start_catch_device_log(
                     log_file_pipe, hilog_file_pipe)
                 self._run_oh_kernel(config_file, request.listeners, request)
@@ -1990,7 +1990,6 @@ class OHKernelTestRunner:
         handler = self._get_shell_handler(listeners)
         command = "cd %s; chmod +x *; sh runtest test %s" % (
             self.config.target_test_path, self.get_args_command()
-
         )
         self.config.device.execute_shell_command(
             command, timeout=self.config.timeout, receiver=handler, retry=0
