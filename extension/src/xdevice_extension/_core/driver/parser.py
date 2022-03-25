@@ -784,9 +784,6 @@ class JSUnitParser(IParser):
             ''.join((self.state_machine.test().stacktrace, message))
 @Plugin(type=Plugin.PARSER, id=CommonParserType.oh_kernel_test)
 class OHKernelTestParser(IParser):
-    """
-        OpenHarmonyKernelTest
-    """
 
     def __init__(self):
         self.state_machine = StateRecorder()
@@ -842,7 +839,7 @@ class OHKernelTestParser(IParser):
         if matcher and matcher.group(1):
             self.state_machine.suite(reset=True)
             test_suite = self.state_machine.suite()
-            test_suite.suite_name = machine.group(1)
+            test_suite.suite_name = matcher.group(1)
             for listener in self.get_listeners():
                 suite_report = copy.copy(test_suite)
                 listener.__started__(LifeCycle.TestSuite, suite_report)
@@ -870,7 +867,7 @@ class OHKernelTestParser(IParser):
         test_result = self.state_machine.test(reset=True)
         test_suite = self.state_machine.suite()
         test_result.test_class = test_suite.suite_name
-        test_result.test_name = machine.group(1)
+        test_result.test_name = matcher.group(1)
         test_result.current = self.state_machine.running_test_index+1
         for listener in self.get_listeners():
             test_result = copy.copy(test_result)
