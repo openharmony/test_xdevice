@@ -55,7 +55,6 @@ _PASS_JSUNIT_MARKER = "[pass]"
 _FAIL_JSUNIT_MARKER = "[fail]"
 _ACE_LOG_MARKER = "jsapp"
 
-LOG = platform_logger("Parser")
 """
 OpenHarmony Kernel Test
 """
@@ -65,6 +64,8 @@ FINISHED_TO_TEST = "Finished to test"
 TIMEOUT_TESTCASES = "Timeout testcases"
 FAIL_DOT = "FAIL."
 PASS_DOT = "PASS."
+
+LOG = platform_logger("Parser")
 
 
 @Plugin(type=Plugin.PARSER, id=CommonParserType.cpptest)
@@ -668,8 +669,7 @@ class JSUnitParser(IParser):
         match_list = ["app Log:", "JSApp:", "JsApp:"]
         for keyword in match_list:
             if keyword in message:
-                filter_message = message.split(
-                    r"{0}".format(keyword))[1].strip()
+                filter_message = message.split(r"{0}".format(keyword))[1].strip()
                 break
         end_time = "%s-%s" % \
                    (year, re.match(self.pattern, message).group().strip())
@@ -782,6 +782,8 @@ class JSUnitParser(IParser):
                 "%s\r\n" % self.state_machine.test().stacktrace
         self.state_machine.test().stacktrace = \
             ''.join((self.state_machine.test().stacktrace, message))
+
+
 @Plugin(type=Plugin.PARSER, id=CommonParserType.oh_kernel_test)
 class OHKernelTestParser(IParser):
 
@@ -828,13 +830,14 @@ class OHKernelTestParser(IParser):
     def handle_suites_ended_tag(self, line):
         suites = self.state_machine.get_suites()
         suites.is_completed = True
-        for listener in self.get_listeners():
-            listener.__ended__(
-                LifeCycle.TestSuites, test_result=suites, suites_name=suites.suites_name)
 
-    def handle_suites_start_tag(self, line):
-        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"\
-            " Start to test (.+)$"
+        for listener in self.get_listeners():
+            listener.__ended__(LifeCycle.TestSuites, test_result=suites,
+                               suites_name=suites.suites_name)
+
+    def handle_suite_start_tag(self, line):
+        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}" \
+                  " Start to test (.+)$"
         matcher = re.match(pattern, line)
         if matcher and matcher.group(1):
             self.state_machine.suite(reset=True)
@@ -845,8 +848,8 @@ class OHKernelTestParser(IParser):
                 listener.__started__(LifeCycle.TestSuite, suite_report)
 
     def handle_suite_end_tag(self, line):
-        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"\
-            " Finished to test (.+)$"
+        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}" \
+                  " Finished to test (.+)$"
         matcher = re.match(pattern, line)
         if matcher and matcher.group(1):
             suite_result = self.state_machine.suite()
@@ -854,13 +857,14 @@ class OHKernelTestParser(IParser):
             suite_result.run_time = suite_result.run_time
             suites.run_time += suite_result.run_time
             suite_result.is_completed = True
+            
             for listener in self.get_listeners():
                 suite = copy.copy(suite_result)
                 listener.__ended__(LifeCycle.TestSuite, suite, is_clear=True)
 
     def handle_one_test_case_tag(self, line):
-        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} (.+) "\
-            "(PASS|FAIL)\\.$"
+        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} (.+) " \
+                  "(PASS|FAIL)\\.$"
         matcher = re.match(pattern, line)
         if not (matcher and matcher.group(1) and matcher.group(2)):
             return
@@ -868,10 +872,11 @@ class OHKernelTestParser(IParser):
         test_suite = self.state_machine.suite()
         test_result.test_class = test_suite.suite_name
         test_result.test_name = matcher.group(1)
-        test_result.current = self.state_machine.running_test_index+1
+        test_result.current = self.state_machine.running_test_index + 1
         for listener in self.get_listeners():
             test_result = copy.copy(test_result)
             listener.__started__(LifeCycle.TestCase, test_result)
+
         test_suites = self.state_machine.get_suites()
         if PASS_DOT in line:
             test_result.code = ResultCode.PASSED.value
