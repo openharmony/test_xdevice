@@ -136,6 +136,7 @@ class DeviceTestType(object):
     open_source_test = "OpenSourceTest"
     build_only_test = "BuildOnlyTestLite"
     ltp_posix_test = "LtpPosixTest"
+    oh_kernel_test = "OHKernelTest"
 
 
 @dataclass
@@ -163,6 +164,7 @@ TEST_DRIVER_SET = {
     DeviceTestType.cpp_test_lite,
     DeviceTestType.ctest_lite,
     DeviceTestType.lite_cpp_test,
+    DeviceTestType.oh_kernel_test,
     HostDrivenTestType.device_test
 }
 
@@ -207,6 +209,7 @@ class CommonParserType:
     cpptest_list = "CppTestList"
     junit = "JUnit"
     ltp_posix = "LtpPosixTest"
+    oh_kernel_test = "OHKernel"
 
 
 @dataclass
@@ -241,6 +244,9 @@ class CKit:
 class GTestConst(object):
     exec_para_filter = "--gtest_filter"
     exec_para_level = "--gtest_testsize"
+
+
+@dataclass
 class FilePermission(object):
     mode_777 = 0o777
     mode_755 = 0o755
