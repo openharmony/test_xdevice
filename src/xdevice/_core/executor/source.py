@@ -180,7 +180,6 @@ def _get_test_sources(config, testcases_dirs):
     # get test sources from config.testfile
     if getattr(config, "testfile", ""):
         test_file = _get_test_file(config, testcases_dirs)
-        import stat
         flags = os.O_RDONLY
         modes = stat.S_IWUSR | stat.S_IRUSR
         with os.fdopen(os.open(test_file, flags, modes), "r") as file_content:
