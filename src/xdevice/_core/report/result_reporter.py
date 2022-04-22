@@ -653,8 +653,9 @@ class ResultReporter(IReporter):
             zip_info = zipfile.ZipInfo.from_file(filename, arcname)
             zip_info.compress_type = getattr(zip_object, "compression",
                                              zipfile.ZIP_DEFLATED)
-            zip_info._compresslevel = \
-                getattr(zip_object, "compresslevel", None)
+            if hasattr(zip_info, "_compresslevel"):
+                _compress_level = getattr(zip_object, "compresslevel", None)
+                setattr(zip_info, "_compresslevel", _compress_level)
             with open(filename, "rb") as src, \
                     zip_object.open(zip_info, "w") as des:
                 shutil.copyfileobj(src, des, 1024 * 1024 * 8)

@@ -302,7 +302,9 @@ class ShellKit(ITestKit):
 @Plugin(type=Plugin.TEST_KIT, id=CKit.wifi)
 class WifiKit(ITestKit):
     def __init__(self):
-        pass
+        self.certfilename = ""
+        self.certpassword = ""
+        self.wifiname = ""
 
     def __check_config__(self, config):
         self.certfilename = get_config_value(
