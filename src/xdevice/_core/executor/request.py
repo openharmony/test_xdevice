@@ -154,17 +154,20 @@ class Task:
 
         plugin_id = None
         source = test_descriptor.source
+        ignore_test = ""
 
         if isinstance(source, TestSource):
             if source.test_type is not None:
                 plugin_id = source.test_type
             else:
+                ignore_test = source.module_name
                 LOG.error("'%s' no test driver specified" % source.test_name,
                           error_no="00106")
 
         drivers = get_plugin(plugin_type=Plugin.DRIVER, plugin_id=plugin_id)
         if plugin_id is not None:
             if len(drivers) == 0:
+                ignore_test = source.module_name
                 error_message = "'%s' can not find test driver '%s'" % (
                     source.test_name, plugin_id)
                 LOG.error(error_message, error_no="00106")
@@ -187,6 +190,8 @@ class Task:
                 if check_result is False:
                     LOG.error("'%s' can not find suitable test driver '%s'" %
                               (source.test_name, plugin_id), error_no="00106")
+        if ignore_test and hasattr(self.config, ConfigConst.component_mapper):
+            getattr(self.config, ConfigConst.component_mapper).pop(ignore_test)
 
         for desc in test_descriptor.children:
             self._init_driver(desc)

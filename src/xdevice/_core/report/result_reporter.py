@@ -487,8 +487,10 @@ class ResultReporter(IReporter):
                                      allowZip64=True)
         try:
             LOG.info("executing compress process, please wait...")
+            long_size_file = []
             for src_path, target_path in file_path_list:
-                zip_object.write(src_path, target_path)
+                long_size_file.append((src_path, target_path))
+            self._write_long_size_file(zip_object, long_size_file)
             LOG.info("generate zip file: %s", zipped_file)
         except zipfile.BadZipFile as bad_error:
             LOG.error("zip report folder error: %s" % bad_error.args)
@@ -644,3 +646,15 @@ class ResultReporter(IReporter):
     def get_path_of_summary_report(cls):
         if cls.summary_report_result:
             return cls.summary_report_result[0][0]
+
+    @classmethod
+    def _write_long_size_file(cls, zip_object, long_size_file):
+        for filename, arcname in long_size_file:
+            zip_info = zipfile.ZipInfo.from_file(filename, arcname)
+            zip_info.compress_type = getattr(zip_object, "compression",
+                                             zipfile.ZIP_DEFLATED)
+            zip_info._compresslevel = \
+                getattr(zip_object, "compresslevel", None)
+            with open(filename, "rb") as src, \
+                    zip_object.open(zip_info, "w") as des:
+                shutil.copyfileobj(src, des, 1024 * 1024 * 8)

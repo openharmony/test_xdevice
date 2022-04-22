@@ -238,7 +238,7 @@ class CKit:
     shell = "ShellKit"
     testbundle = "TestBundleKit"
     appinstall = "AppInstallKit"
-
+    component = "ComponentKit"
 
 @dataclass
 class GTestConst(object):
