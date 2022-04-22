@@ -19,6 +19,7 @@
 import os
 import json
 import copy
+import stat
 from collections import namedtuple
 
 from _core.constants import DeviceTestType
@@ -134,8 +135,6 @@ def _append_component_test_source(config, testcases_dir, test_sources):
     subsystem_list = config.subsystem if config.subsystem else list()
     part_list = config.part if config.part else list()
     module_info_files = _get_component_info_file(testcases_dir)
-    import stat
-    import json
     result_dict = dict()
     for info_file in module_info_files:
         flags = os.O_RDONLY

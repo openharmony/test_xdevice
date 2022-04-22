@@ -552,6 +552,8 @@ class RootFsKit(ITestKit):
 class QueryKit(ITestKit):
     def __init__(self):
         self.mount_kit = MountKit()
+        self.query = ""
+        self.properties = ""
 
     def __check_config__(self, config):
         setattr(self.mount_kit, "mount_list",
