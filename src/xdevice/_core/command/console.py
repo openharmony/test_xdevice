@@ -297,6 +297,16 @@ class Console(object):
                                 dest=ConfigConst.repeat,
                                 help="number of times that a task is executed"
                                      " repeatedly")
+            parser.add_argument("-s", "--subsystem",
+                                dest="subsystem",
+                                action="store",
+                                type=str,
+                                help="- Specify the list of subsystem")
+            parser.add_argument("-p", "--part",
+                                dest="part",
+                                action="store",
+                                type=str,
+                                help="- Specify the list of part")
             self._params_pre_processing(para_list)
             (options, unparsed) = parser.parse_known_args(para_list)
             if unparsed:
@@ -344,6 +354,12 @@ class Console(object):
                 config_file=options.config, env=options.test_environment).\
                 get_testcases_dir()
             setattr(options, ConfigConst.testcases_path, testcases_path)
+        if options.subsystem:
+            subsystem_list = str(options.subsystem).split(";")
+            setattr(options, ConfigConst.subsystem, subsystem_list)
+        if options.part:
+            part_list = str(options.part).split(";")
+            setattr(options, ConfigConst.part, part_list)
 
     def command_parser(self, args):
         try:

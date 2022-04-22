@@ -24,6 +24,7 @@ from _core.logger import change_logger_level
 from _core.plugin import Plugin
 from _core.plugin import get_plugin
 from _core.utils import convert_serial
+from _core.constants import ConfigConst
 
 __all__ = ["EnvironmentManager", "DeviceSelectionOption",
            "DeviceAllocationState", "Environment"]
@@ -200,6 +201,7 @@ class DeviceSelectionOption(object):
         self.test_driver = test_source.test_type
         self.source_file = ""
         self.extend_value = {}
+        self.required_component = ""
 
     def get_label(self):
         return self.label
@@ -223,6 +225,14 @@ class DeviceSelectionOption(object):
 
         if self.label and self.label != device.label:
             return False
+
+        if self.required_component and \
+                hasattr(device, ConfigConst.support_component):
+            subsystems, parts = getattr(device, ConfigConst.support_component)
+            required_subsystems, require_part = self.required_component
+            if required_subsystems not in subsystems and \
+                    require_part not in parts:
+                return False
 
         return True
 
