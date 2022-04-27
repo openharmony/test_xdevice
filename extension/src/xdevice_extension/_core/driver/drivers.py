@@ -1624,12 +1624,13 @@ class JSUnitTestDriver(IDriver):
         message_list = list()
         _, end_count, is_suites_end = self.read_device_log_timeout(
             device_log_file, message_list, timeout)
-        if end_count == 0:
-            message_list.append("app Log: [suite end]\n")
-            LOG.error("there is no suite end")
         if not is_suites_end:
             message_list.append("app Log: [end] run suites end\n")
             LOG.error("there is no suites end")
+        if end_count == 0:
+            message_list.append("app Log: [suite end]\n")
+            LOG.error("there is no suite end")
+
         result_message = "".join(message_list)
         message_list.clear()
 
@@ -1939,26 +1940,16 @@ class OHKernelTestDriver(IDriver):
             self.result = "%s.xml" % \
                           os.path.join(request.config.report_path,
                                        "result", request.get_module_name())
-            device_log = get_device_log_file(
-                request.config.report_path,
-                request.config.device.__get_serial__(),
-                "device_log")
-
             hilog = get_device_log_file(
                 request.config.report_path,
                 request.config.device.__get_serial__(),
                 "device_hilog")
 
-            device_log_open = os.open(device_log, os.O_WRONLY | os.O_CREAT |
-                                      os.O_APPEND, FilePermission.mode_755)
             hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                                  FilePermission.mode_755)
-            with os.fdopen(device_log_open, "a") as log_file_pipe, \
-                    os.fdopen(hilog_open, "a") as hilog_file_pipe:
-                self.config.device.start_catch_device_log(log_file_pipe,
-                                                          hilog_file_pipe)
+            with os.fdopen(hilog_open, "a") as hilog_file_pipe:
+                self.config.device.start_catch_device_log(hilog_file_pipe)
                 self._run_oh_kernel(config_file, request.listeners, request)
-                log_file_pipe.flush()
                 hilog_file_pipe.flush()
         except Exception as exception:
             self.error_message = exception
