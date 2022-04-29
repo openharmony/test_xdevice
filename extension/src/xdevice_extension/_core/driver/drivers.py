@@ -1568,6 +1568,7 @@ class JSUnitTestDriver(IDriver):
     """
 
     def __init__(self):
+        self.xml_output = "false"
         self.timeout = 80 * 1000
         self.start_time = None
         self.result = ""
@@ -1805,6 +1806,7 @@ class LTPPosixTestDriver(IDriver):
         self.error_message = ""
         self.kits = []
         self.config = None
+        self.handler = None
 
     def __check_environment__(self, device_options):
         pass
