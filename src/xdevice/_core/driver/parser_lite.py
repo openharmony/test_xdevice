@@ -632,8 +632,8 @@ class CTestParser(IParser):
                         self.handle_one_test_tag(line.strip(), False)
                     else:
                         self.handle_one_test_tag(line.strip(), True)
-            except AttributeError as _:
-                LOG.error("Parsing log: %s failed" % (line.strip()),
+            except AttributeError:
+                LOG.error("parsing log: %s failed" % (line.strip()),
                           error_no="00405")
             self.last_line = line
 
@@ -1107,7 +1107,7 @@ class ShellHandler:
             self.unfinished_line = lines[-1]
             # not return the tail element of this list contains unfinished str,
             # so we set position -1
-            return lines[:-1]
+            return lines
 
     def __read__(self, output):
         lines = self._process_output(output)
@@ -1131,7 +1131,7 @@ class ShellHandler:
             for parser in self.parsers:
                 parser.__process__([message])
         if not check_pub_key_exist():
-            LOG.debug("Result code is: {}{}".format(result_code, msg_fmt))
+            LOG.debug("result code is: {}{}".format(result_code, msg_fmt))
         for parser in self.parsers:
             parser.__done__()
 
