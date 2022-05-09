@@ -324,7 +324,7 @@ class CppTestParserLite(IParser):
         if not error_msg:
             error_msg = "Unknown error"
         if not check_pub_key_exist():
-            LOG.debug("error_msg:%s" % error_msg)
+            LOG.debug("Error msg:%s" % error_msg)
 
     def mark_test_as_failed(self, test):
         if not self.state_machine.current_suite and not test.class_name:
@@ -419,7 +419,7 @@ class CppTestListParserLite(IParser):
     def _process_method_line(self, line):
         if not self.last_test_class_name:
             LOG.error(
-                "parsed new test case name %s but no test class"
+                "Parsed new test case name %s but no test class"
                 " name has been set" % line, error_no="00405")
         else:
             test = TestDescription(self.last_test_class_name,
@@ -443,7 +443,7 @@ class CppTestListParserLite(IParser):
                 self._process_method_line(line)
             else:
                 if not check_pub_key_exist():
-                    LOG.debug("line ignored: %s" % line)
+                    LOG.debug("Line ignored: %s" % line)
 
     def handle_test_tag(self, test_class, test_name):
         test_result = self.state_machine.test(reset=True)
@@ -534,6 +534,7 @@ class CTestParser(IParser):
         self.listeners = []
         self.product_info = {}
         self.is_params = False
+        self.result_lines = []
 
     def get_suite_name(self):
         return self.suites_name
@@ -600,6 +601,18 @@ class CTestParser(IParser):
         if self.state_machine.suites_is_started() or \
                 self._is_ctest_start_test_run(line):
             try:
+                test_matcher = re.match(r".*(\d+ Tests).+", line)
+                other_matcher = \
+                    re.match(r".*(\d+ Failures \d+ Ignored).*",line)
+                if (test_matcher or other_matcher) and \
+                        not self._is_ctest_run(line):
+                    if test_matcher:
+                        self.result_lines.append(test_matcher.group(1))
+                    if other_matcher:
+                        self.result_lines.append(other_matcher.group(1))
+                        line = " ".join(self.result_lines)
+                        self.result_lines.clear()
+
                 if self._is_ctest_start_test_run(line):
                     self.handle_suites_started_tag()
                 elif self._is_ctest_end_test_run(line):
@@ -619,8 +632,8 @@ class CTestParser(IParser):
                         self.handle_one_test_tag(line.strip(), False)
                     else:
                         self.handle_one_test_tag(line.strip(), True)
-            except AttributeError:
-                LOG.error("parsing log: %s failed" % (line.strip()),
+            except AttributeError as _:
+                LOG.error("Parsing log: %s failed" % (line.strip()),
                           error_no="00405")
             self.last_line = line
 
@@ -1094,7 +1107,7 @@ class ShellHandler:
             self.unfinished_line = lines[-1]
             # not return the tail element of this list contains unfinished str,
             # so we set position -1
-            return lines
+            return lines[:-1]
 
     def __read__(self, output):
         lines = self._process_output(output)
@@ -1118,7 +1131,7 @@ class ShellHandler:
             for parser in self.parsers:
                 parser.__process__([message])
         if not check_pub_key_exist():
-            LOG.debug("result code is: {}{}".format(result_code, msg_fmt))
+            LOG.debug("Result code is: {}{}".format(result_code, msg_fmt))
         for parser in self.parsers:
             parser.__done__()
 
