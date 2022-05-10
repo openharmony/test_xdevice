@@ -246,6 +246,10 @@ def get_file_absolute_path(input_name, paths=None, alt_dir=None):
         _inputs.append(input_name.replace("resource/", "", 1))
     elif input_name.startswith("testcases/"):
         _inputs.append(input_name.replace("testcases/", "", 1))
+    elif input_name.startswith("resource\\"):
+        _inputs.append(input_name.replace("resource\\", "", 1))
+    elif input_name.startswith("testcases\\"):
+        _inputs.append(input_name.replace("testcases\\", "", 1))
 
     for _input in _inputs:
         for path in abs_paths:

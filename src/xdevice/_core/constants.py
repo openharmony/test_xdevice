@@ -231,7 +231,7 @@ class CKit:
     liteshell = "LiteShellKit"
     app_install = "AppInstallKit"
     deploytool = "DeployToolKit"
-
+    component = "ComponentKit"
 
 @dataclass
 class GTestConst(object):
@@ -270,6 +270,8 @@ class ConfigConst(object):
     check_device = "check_device"
     configfile = "config"
     repeat = "repeat"
+    subsystem = "subsystem"
+    part = "part"
 
     # Runtime Constant
     history_report_path = "history_report_path"
@@ -281,6 +283,9 @@ class ConfigConst(object):
     module_kits = "module_kits"
     spt = "spt"
     version = "version"
+    component_mapper = "_component_mapper"
+    component_base_kit = "component_base_kit"
+    support_component = "support_component"
 
 
 class FilePermission(object):
