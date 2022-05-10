@@ -330,6 +330,13 @@ class Scheduler(object):
             device_option.source_file = test_source.source_file or \
                                         test_source.source_string
             device_options.append(device_option)
+
+        if ConfigConst.component_mapper in options.keys():
+            required_component = options.get(ConfigConst.component_mapper). \
+                get(test_source.module_name, None)
+            for device_option in device_options:
+                device_option.required_component = required_component
+
         return device_options
 
     @staticmethod
@@ -454,6 +461,11 @@ class Scheduler(object):
                     LOG.info("")
                     test_drivers.pop(0)
                     continue
+
+            if getattr(task.config, ConfigConst.component_mapper, ""):
+                module_name = test_driver[1].source.module_name
+                self.component_task_setup(task, module_name)
+
             # get environment
             try:
                 environment = self.__allocate_environment__(
@@ -751,6 +763,24 @@ class Scheduler(object):
 
     @staticmethod
     def _find_test_root_descriptor(config):
+        if getattr(config, "task", None) or getattr(config, "testargs", None):
+            Scheduler._pre_component_test(config)
+
+        if getattr(config, "subsystem", "") or getattr(config, "part", "") or \
+                getattr(config, "component_base_kit", ""):
+            uid = unique_id("Scheduler", "component")
+            if config.subsystem or config.part:
+                test_set = (config.subsystem, config.part)
+            else:
+                kit = getattr(config, ConfigConst.component_base_kit)
+                test_set = kit.get_white_list()
+
+            root = Descriptor(uuid=uid, name="component",
+                              source=TestSetSource(test_set),
+                              container=True)
+            root.children = find_test_descriptors(config)
+            return root
+
         # read test list from testdict
         if getattr(config, "testdict", "") != "" and getattr(
                 config, "testfile", "") == "":
@@ -1104,3 +1134,53 @@ class Scheduler(object):
     def _clear_test_dict_source(cls):
         TestDictSource.exe_type.clear()
         TestDictSource.test_type.clear()
+
+    @classmethod
+    def _pre_component_test(cls, config):
+        if not config.kits:
+            return
+        cur_kit = None
+        for kit in config.kits:
+            if kit.__class__.__name__ == CKit.component:
+                cur_kit = kit
+                break
+        if not cur_kit:
+            return
+        get_white_list = getattr(cur_kit, "get_white_list", None)
+        if not callable(get_white_list):
+            return
+        subsystems, parts = get_white_list()
+        if not subsystems and not parts:
+            return
+        setattr(config, ConfigConst.component_base_kit, cur_kit)
+
+    @classmethod
+    def component_task_setup(cls, task, module_name):
+        component_kit = task.config.get(ConfigConst.component_base_kit, None)
+        if not component_kit:
+            # only -p -s .you do not care about the components that can be
+            # supported. you only want to run the use cases of the current
+            # component
+            return
+        LOG.debug("Start component task setup")
+        _component_mapper = task.config.get(ConfigConst.component_mapper)
+        _subsystem, _part = _component_mapper.get(module_name)
+
+        is_hit = False
+        # find in cache. if not find, update cache
+        cache_subsystem, cache_part = component_kit.get_cache()
+        if _subsystem in cache_subsystem or _part in cache_subsystem:
+            is_hit = True
+        if not is_hit:
+            env_manager = EnvironmentManager()
+            for _, manager in env_manager.managers.items():
+                if getattr(manager, "devices_list", []):
+                    for device in manager.devices_list:
+                        component_kit.__setup__(device)
+            cache_subsystem, cache_part = component_kit.get_cache()
+            if _subsystem in cache_subsystem or _part in cache_subsystem:
+                is_hit = True
+        if not is_hit:
+            LOG.warning("%s are skipped, no suitable component found. "
+                        "Require subsystem=%s part=%s, no device match this"
+                        % (module_name, _subsystem, _part))
