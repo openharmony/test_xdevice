@@ -153,7 +153,7 @@ class Scheduler(object):
 
         finally:
             Scheduler._clear_test_dict_source()
-            if getattr(task.config, ConfigConst.test_environment, "") or\
+            if getattr(task.config, ConfigConst.test_environment, "") or \
                     getattr(task.config, ConfigConst.configfile, ""):
                 self._restore_environment()
 
@@ -560,7 +560,7 @@ class Scheduler(object):
                 LOG.info("copy %s to %s" % (
                     history_execute_result, target_execute_result))
             else:
-                error_msg = "copy failed! %s not exists!" %\
+                error_msg = "copy failed! %s not exists!" % \
                             history_execute_result
                 raise ParamError(error_msg)
 
@@ -634,7 +634,7 @@ class Scheduler(object):
         for device in used_devices.values():
             if getattr(device, ConfigConst.need_kit_setup, True):
                 continue
-            
+
             for kit in getattr(device, ConfigConst.task_kits, []):
                 try:
                     kit.__teardown__(device)
@@ -763,14 +763,16 @@ class Scheduler(object):
 
     @staticmethod
     def _find_test_root_descriptor(config):
-        if getattr(config, "task", None) or getattr(config, "testargs", None):
+        if getattr(config, ConfigConst.task, None) or \
+                getattr(config, ConfigConst.testargs, None):
             Scheduler._pre_component_test(config)
 
-        if getattr(config, "subsystem", "") or getattr(config, "part", "") or \
-                getattr(config, "component_base_kit", ""):
+        if getattr(config, ConfigConst.subsystems, "") or \
+                getattr(config, ConfigConst.parts, "") \
+                or getattr(config, ConfigConst.component_base_kit, ""):
             uid = unique_id("Scheduler", "component")
-            if config.subsystem or config.part:
-                test_set = (config.subsystem, config.part)
+            if config.subsystems or config.parts:
+                test_set = (config.subsystems, config.parts)
             else:
                 kit = getattr(config, ConfigConst.component_base_kit)
                 test_set = kit.get_white_list()
@@ -782,8 +784,8 @@ class Scheduler(object):
             return root
 
         # read test list from testdict
-        if getattr(config, "testdict", "") != "" and getattr(
-                config, "testfile", "") == "":
+        if getattr(config, ConfigConst.testdict, "") != "" and getattr(
+                config, ConfigConst.testfile, "") == "":
             uid = unique_id("Scheduler", "testdict")
             root = Descriptor(uuid=uid, name="testdict",
                               source=TestSetSource(config.testdict),
@@ -792,9 +794,10 @@ class Scheduler(object):
             return root
 
         # read test list from testfile, testlist or task
-        test_set = getattr(config, "testfile", "") or getattr(
-            config, "testlist", "") or getattr(config, "task", "") or getattr(
-            config, "testcase")
+        test_set = getattr(config, ConfigConst.testfile, "") or getattr(
+            config, ConfigConst.testlist, "") or getattr(
+            config, ConfigConst.task, "") or getattr(
+            config, ConfigConst.testcase)
         if test_set:
             fname, _ = get_filename_extension(test_set)
             uid = unique_id("Scheduler", fname)
@@ -825,7 +828,7 @@ class Scheduler(object):
                 case_id, result, error, start_time, end_time, report_path))
         if Scheduler.proxy:
             Scheduler.proxy.upload_result(case_id, result, error,
-                start_time, end_time, report_path)
+                                          start_time, end_time, report_path)
             return
         from agent.factory import upload_result
         upload_result(case_id, result, error, start_time, end_time,
@@ -863,9 +866,9 @@ class Scheduler(object):
             upload_suite.append(case)
         if Scheduler.proxy:
             Scheduler.proxy.upload_result(case_id, result, error,
-                start_time, end_time, report_path)
+                                          start_time, end_time, report_path)
             return
-        from agent.factory import upload_batch            
+        from agent.factory import upload_batch
         upload_batch(upload_suite)
 
     @classmethod

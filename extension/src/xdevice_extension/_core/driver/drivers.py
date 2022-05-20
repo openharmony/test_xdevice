@@ -1979,11 +1979,6 @@ class OHKernelTestDriver(IDriver):
             do_module_kit_teardown(request)
 
     def _get_driver_config(self, json_config):
-        LOG.info("_get_driver_config")
-        d = dict(json_config.get_driver())
-        for key in d.keys():
-            LOG.info("%s:%s" % (key, d[key]))
-
         target_test_path = get_config_value('native-test-device-path',
                                             json_config.get_driver(), False)
         test_suite_name = get_config_value('test-suite-name',

@@ -192,6 +192,7 @@ class ListenerType:
     upload = "Upload"
     collect = "Collect"
     collect_lite = "CollectLite"
+    collect_pass = "CollectPass"
 
 
 @dataclass
@@ -212,6 +213,7 @@ class CommonParserType:
     ltp_posix = "LtpPosixTest"
     oh_kernel_test = "OHKernel"
     oh_jsunit = "OHJSUnit"
+    oh_jsunit_list = "OHJSUnitList"
 
 
 @dataclass
