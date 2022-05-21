@@ -93,8 +93,6 @@ def perform_device_action(func):
                 self.log.exception("error type: %s, error: %s" % (
                     error.__class__.__name__, error), exc_info=False)
                 exception = error
-        if exception:
-            raise exception
 
     return device_action
 
