@@ -817,7 +817,6 @@ class HdcHelper:
             device.log.info("%s execute command: hdc target boot" %
                             convert_serial(device.device_sn))
         with HdcHelper.socket(host=device.host, port=device.port) as sock:
-            HdcHelper.set_device(device, sock)
             HdcHelper.handle_shake(sock, device.device_sn)
             request = HdcHelper.form_hdc_request("reboot")
 
@@ -846,8 +845,7 @@ class HdcHelper:
             with HdcHelper.socket(host=device.host, port=device.port,
                                   timeout=timeout) as sock:
                 output_flag = kwargs.get("output_flag", True)
-                timeout_msg = '' if (timeout/1000) == 300.0 else \
-                    " with timeout %ss" % str(timeout/1000)
+                timeout_msg = " with timeout %ss" % str(timeout/1000)
                 end_mark = kwargs.get("end_mark", "")
                 read_timeout = kwargs.get("read_timeout", None)
                 if device.usb_type == DeviceConnectorType.hdc:

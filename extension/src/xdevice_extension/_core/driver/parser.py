@@ -34,7 +34,8 @@ from xdevice import ResultCode
 from xdevice_extension._core.constants import CommonParserType
 
 __all__ = ["CppTestParser", "CppTestListParser", "JunitParser", "JSUnitParser",
-           "OHKernelTestParser", "OHJSUnitTestParser"]
+           "OHKernelTestParser", "OHJSUnitTestParser",
+           "OHJSUnitTestListParser"]
 
 _INFORMATIONAL_MARKER = "[----------]"
 _START_TEST_RUN_MARKER = "[==========] Running"
@@ -64,6 +65,8 @@ FINISHED_TO_TEST = "Finished to test"
 TIMEOUT_TESTCASES = "Timeout testcases"
 FAIL_DOT = "FAIL."
 PASS_DOT = "PASS."
+ERROR_EXCLAMATION = "ERROR!!!"
+TIMEOUT_EXCLAMATION = "TIMEOUT!"
 
 LOG = platform_logger("Parser")
 
@@ -813,8 +816,11 @@ class OHKernelTestParser(IParser):
                 self.handle_suite_start_tag(line)
             elif FINISHED_TO_TEST in line:
                 self.handle_suite_end_tag(line)
-            elif line.endswith(PASS_DOT) or line.endswith(FAIL_DOT):
+            elif line.endswith(PASS_DOT):
                 self.handle_one_test_case_tag(line)
+            elif line.endswith(ERROR_EXCLAMATION) \
+                    or line.endswith(TIMEOUT_EXCLAMATION):
+                self.handle_test_case_error(line)
             elif TIMEOUT_TESTCASES in line:
                 self.handle_suites_ended_tag(line)
 
@@ -864,7 +870,7 @@ class OHKernelTestParser(IParser):
 
     def handle_one_test_case_tag(self, line):
         pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} (.+) " \
-                  "(PASS|FAIL)\\.$"
+                  "(PASS)\\.$"
         matcher = re.match(pattern, line)
         if not (matcher and matcher.group(1) and matcher.group(2)):
             return
@@ -893,8 +899,40 @@ class OHKernelTestParser(IParser):
             listener.__ended__(LifeCycle.TestCase, result)
         self.state_machine.running_test_index += 1
 
+    def handle_test_case_error(self, line):
+        pattern = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} (.+) " \
+                  "(ERROR!!!|TIMEOUT!)$"
+        matcher = re.match(pattern, line)
+        if not (matcher and matcher.group(1) and matcher.group(2)):
+            return
+        test_result = self.state_machine.test(reset=True)
+        test_suite = self.state_machine.suite()
+        test_result.test_class = test_suite.suite_name
+        test_result.test_name = matcher.group(1)
+        test_result.current = self.state_machine.running_test_index + 1
+        for listener in self.get_listeners():
+            test_result = copy.copy(test_result)
+            listener.__started__(LifeCycle.TestCase, test_result)
 
-class OHOSPrefixes(Enum):
+        test_suites = self.state_machine.get_suites()
+        if ERROR_EXCLAMATION in line:
+            test_result.code = ResultCode.FAILED.value
+        elif TIMEOUT_EXCLAMATION in line:
+            test_result.code = ResultCode.BLOCKED.value
+
+        for listener in self.get_listeners():
+            result = copy.copy(test_result)
+            listener.__failed__(LifeCycle.TestCase, result)
+        self.state_machine.test().is_completed = True
+        test_suite.test_num += 1
+        test_suites.test_num += 1
+        for listener in self.get_listeners():
+            result = copy.copy(test_result)
+            listener.__ended__(LifeCycle.TestCase, result)
+        self.state_machine.running_test_index += 1
+
+
+class OHJSUnitPrefixes(Enum):
     SUM = "OHOS_REPORT_SUM: "
     STATUS = "OHOS_REPORT_STATUS: "
     STATUS_CODE = "OHOS_REPORT_STATUS_CODE: "
@@ -914,7 +952,7 @@ class OHJSUnitTestParser(IParser):
         self.start_time = datetime.datetime.now()
         self.test_time = 0
         self.test_run_finished = False
-        self.sum = False
+        self.no_pass_indexes = []
 
     def get_suite_name(self):
         return self.suite_name
@@ -931,21 +969,12 @@ class OHJSUnitTestParser(IParser):
     def parse(self, line):
         if not str(line).strip():
             return
-        if line.startswith(OHOSPrefixes.SUM.value):
-            pass
-        elif line.startswith(OHOSPrefixes.STATUS.value):
-            if self.sum:
-                self.sum = False
-                return
+        if line.startswith(OHJSUnitPrefixes.STATUS.value):
             self.submit_current_key_value()
-            self.parse_key(line, len(OHOSPrefixes.STATUS.value))
-        elif line.startswith(OHOSPrefixes.STATUS_CODE.value):
+            self.parse_key(line, len(OHJSUnitPrefixes.STATUS.value))
+        elif line.startswith(OHJSUnitPrefixes.STATUS_CODE.value):
             self.submit_current_key_value()
             self.parse_status_code(line)
-        elif line.startswith(OHOSPrefixes.RESULT.value):
-            pass
-        elif line.startswith(OHOSPrefixes.CODE.value):
-            pass
 
     def submit_current_key_value(self):
         if self.current_key and self.current_value:
@@ -973,7 +1002,7 @@ class OHJSUnitTestParser(IParser):
             self.current_value = key_value[1]
 
     def parse_status_code(self, line):
-        value = line[len(OHOSPrefixes.STATUS_CODE.value):]
+        value = line[len(OHJSUnitPrefixes.STATUS_CODE.value):]
         test_info = self.state_machine.test()
         test_info.code = int(value)
         if test_info.code != StatusCodes.IN_PROGRESS:
@@ -1005,7 +1034,11 @@ class OHJSUnitTestParser(IParser):
                 result = copy.copy(test_info)
                 result.code = ResultCode.FAILED.value
                 listener.__ended__(LifeCycle.TestCase, result)
+                if listener.__class__.__name__ == "ReportListener":
+                    index = list(listener.tests.keys())[-1]
+                    self.no_pass_indexes.append(index)
             test_info.is_completed = True
+
         elif test_info.code == StatusCodes.ERROR.value:
             self.state_machine.running_test_index += 1
             test_info.current = self.state_machine.running_test_index
@@ -1016,6 +1049,9 @@ class OHJSUnitTestParser(IParser):
                 result = copy.copy(test_info)
                 result.code = ResultCode.FAILED.value
                 listener.__ended__(LifeCycle.TestCase, result)
+                if listener.__class__.__name__ == "ReportListener":
+                    index = list(listener.tests.keys())[-1]
+                    self.no_pass_indexes.append(index)
             test_info.is_completed = True
         elif test_info.code == StatusCodes.SUCCESS.value:
             self.state_machine.running_test_index += 1
@@ -1065,4 +1101,53 @@ class OHJSUnitTestParser(IParser):
             suite = copy.copy(suite_result)
             listener.__ended__(LifeCycle.TestSuite, suite,
                                suite_report=True)
+            if listener.__class__.__name__ == "ReportListener":
+                for index in self.no_pass_indexes:
+                    if index in listener.tests:
+                        listener.tests.pop(index)
         self.state_machine.current_suite = None
+
+    def mark_test_as_blocked(self, test):
+        test_info = self.state_machine.test()
+        if test_info:
+            test_info.test_class = test.class_name
+            test_info.test_name = test.test_name
+            test_info.num_tests = 1
+            test_info.run_time = 0
+            test_info.code = StatusCodes.START.value
+            self.report_result(test_info)
+            test_info.code = StatusCodes.BLOCKED.value
+            self.report_result(test_info)
+            self.__done__()
+
+
+@Plugin(type=Plugin.PARSER, id=CommonParserType.oh_jsunit_list)
+class OHJSUnitTestListParser(IParser):
+
+    def __init__(self):
+        self.tests = []
+        self.json_str = ""
+
+    def __process__(self, lines):
+        for line in lines:
+            if not check_pub_key_exist():
+                LOG.debug(line)
+            self.parse(line)
+
+    def __done__(self):
+        pass
+
+    def parse(self, line):
+        if "{" in line or "}" in line:
+            self.json_str = "%s%s" % (self.json_str, line)
+            return
+        if "user test finished." in line:
+            import json
+            suite_dict_list = json.loads(self.json_str).get("suites", [])
+            for suite_dict in suite_dict_list:
+                for class_name, test_name_dict_list in suite_dict.items():
+                    for test_name_dict in test_name_dict_list:
+                        for test_name in test_name_dict.values():
+                            test = TestDescription(class_name, test_name)
+                            self.tests.append(test)
+
