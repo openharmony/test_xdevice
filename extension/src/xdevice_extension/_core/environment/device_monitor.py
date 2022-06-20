@@ -86,7 +86,7 @@ class DeviceStateMonitor(object):
         while int(time.time()*1000) - start_time < wait_time:
             try:
                 result = self.device.get_recover_result(retry=0)
-                if result == "ohos":
+                if "1" in result:
                     return True
             except Exception as exception:
                 self.device.log.error("wait for boot complete exception: %s"
