@@ -54,6 +54,7 @@ _START_JSUNIT_SUITE_END_MARKER = "[suite end]"
 _END_JSUNIT_RUN_MARKER = "[end] run suites end"
 _PASS_JSUNIT_MARKER = "[pass]"
 _FAIL_JSUNIT_MARKER = "[fail]"
+_ERROR_JSUNIT_MARKER = "[error]"
 _ACE_LOG_MARKER = "jsapp"
 
 """
@@ -450,7 +451,7 @@ class JunitParser(IParser):
         elif line.startswith(Prefixes.TIME_REPORT.value):
             self.parse_time(line)
         else:
-            if self.current_value:
+            if self.current_key == "stack" and self.current_value:
                 self.current_value = self.current_value + r"\r\n"
                 self.current_value = self.current_value + line
             elif line:
@@ -628,7 +629,8 @@ class JSUnitParser(IParser):
         self.state_machine = StateRecorder()
         self.suites_name = ""
         self.listeners = []
-        self.suite_name = ""
+        self.expect_tests_dict = dict()
+        self.marked_suite_set = set()
 
     def get_listeners(self):
         return self.listeners
@@ -640,16 +642,9 @@ class JSUnitParser(IParser):
             self.parse(line)
 
     def __done__(self):
-        suite_result = self.state_machine.suite()
-        suite_result.is_completed = True
-        for listener in self.get_listeners():
-            suite = copy.copy(suite_result)
-            listener.__ended__(LifeCycle.TestSuites, suite,
-                               suite_report=True)
-        self.state_machine.current_suite = None
+        pass
 
     def parse(self, line):
-        line = line.strip()
         if (self.state_machine.suites_is_started() or line.find(
                 _START_JSUNIT_RUN_MARKER) != -1) and line.lower().find(
                 _ACE_LOG_MARKER) != -1:
@@ -662,17 +657,19 @@ class JSUnitParser(IParser):
             elif line.endswith(_START_JSUNIT_SUITE_END_MARKER):
                 self.handle_suite_ended_tag()
             elif _PASS_JSUNIT_MARKER in line or _FAIL_JSUNIT_MARKER \
-                    in line:
+                    in line or _ERROR_JSUNIT_MARKER in line:
                 self.handle_one_test_tag(line.strip())
             self.last_line = line
 
     def parse_test_description(self, message):
-        pattern = r"\[(pass|fail)\]"
+        pattern = r".*\[(pass|fail|error)\]"
         year = time.strftime("%Y")
         match_list = ["app Log:", "JSApp:", "JsApp:"]
+        filter_message = ""
         for keyword in match_list:
             if keyword in message:
-                filter_message = message.split(r"{0}".format(keyword))[1].strip()
+                filter_message = \
+                    message.split(r"{0}".format(keyword))[1].strip()
                 break
         end_time = "%s-%s" % \
                    (year, re.match(self.pattern, message).group().strip())
@@ -686,16 +683,17 @@ class JSUnitParser(IParser):
             time.strptime(end_time, "%Y-%m-%d %H:%M:%S.%f"))) * 1000 + int(
             end_time.split(".")[-1])
         run_time = end_timestamp - start_timestamp
-        _, status_end_index = re.match(pattern, filter_message).span()
-        status = filter_message[:status_end_index]
+        match = re.match(pattern, filter_message)
+        _, status_end_index = match.span()
         if " ;" in filter_message:
             test_name = filter_message[status_end_index:
                                        str(filter_message).find(" ;")]
         else:
             test_name = filter_message[status_end_index:]
         status_dict = {"pass": ResultCode.PASSED, "fail": ResultCode.FAILED,
-                       "ignore": ResultCode.SKIPPED}
-        status = status_dict.get(status[1:-1])
+                       "ignore": ResultCode.SKIPPED,
+                       "error": ResultCode.FAILED}
+        status = status_dict.get(match.group(1))
         return test_name, status, run_time
 
     def handle_suites_started_tag(self):
@@ -708,6 +706,7 @@ class JSUnitParser(IParser):
             listener.__started__(LifeCycle.TestSuites, suite_report)
 
     def handle_suites_ended_tag(self):
+        self._mark_all_test_case()
         suites = self.state_machine.get_suites()
         suites.is_completed = True
 
@@ -743,7 +742,8 @@ class JSUnitParser(IParser):
                 listener.__skipped__(LifeCycle.TestCase, result)
 
         self.state_machine.test().is_completed = True
-        test_suite.test_num += 1
+        if not hasattr(test_suite, "total_cases"):
+            test_suite.test_num += 1
         test_suites.test_num += 1
         for listener in self.get_listeners():
             result = copy.copy(test_result)
@@ -756,14 +756,22 @@ class JSUnitParser(IParser):
 
     def handle_suite_started_tag(self, message):
         self.state_machine.suite(reset=True)
+        self.state_machine.running_test_index = 0
         test_suite = self.state_machine.suite()
-        if re.match(r".*\[suite start\].*", message):
-            _, index = re.match(r".*\[suite start\]", message).span()
-        if message[index:]:
-            test_suite.suite_name = message[index:]
+        if "total cases:" in message:
+            m_result = re.match(r".*\[suite start](.+), total cases: (\d+)",
+                                message)
+            if m_result:
+                expect_test_num = m_result.group(2)
+                test_suite.suite_name = m_result.group(1)
+                test_suite.test_num = int(expect_test_num)
+                setattr(test_suite, "total_cases", True)
+
         else:
-            test_suite.suite_name = self.suite_name
-        test_suite.test_num = 0
+            if re.match(r".*\[suite start].*", message):
+                _, index = re.match(r".*\[suite start]", message).span()
+                test_suite.suite_name = message[index:] or self.suites_name
+                test_suite.test_num = 0
         for listener in self.get_listeners():
             suite_report = copy.copy(test_suite)
             listener.__started__(LifeCycle.TestSuite, suite_report)
@@ -774,7 +782,7 @@ class JSUnitParser(IParser):
         suite_result.run_time = suite_result.run_time
         suites.run_time += suite_result.run_time
         suite_result.is_completed = True
-
+        self._mark_test_case(suite_result, self.get_listeners())
         for listener in self.get_listeners():
             suite = copy.copy(suite_result)
             listener.__ended__(LifeCycle.TestSuite, suite, is_clear=True)
@@ -785,6 +793,65 @@ class JSUnitParser(IParser):
                 "%s\r\n" % self.state_machine.test().stacktrace
         self.state_machine.test().stacktrace = \
             ''.join((self.state_machine.test().stacktrace, message))
+
+    def _mark_test_case(self, suite, listeners):
+        if not self.expect_tests_dict:
+            return
+        tests_list = []
+        for listener in listeners:
+            if listener.__class__.__name__ == "ReportListener":
+                tests_list.extend(listener.tests.values())
+                break
+        test_name_list = []
+        for item_test in tests_list:
+            test_name_list.append(item_test.test_name)
+        self.marked_suite_set.add(suite.suite_name)
+        test_in_cur = self.expect_tests_dict.get(suite.suite_name, [])
+        for test in test_in_cur:
+            if test.test_name not in test_name_list:
+                self._mock_test_case_life_cycle(listeners, test)
+
+    def _mock_test_case_life_cycle(self, listeners, test):
+        test_result = self.state_machine.test(reset=True)
+        test_result.test_class = test.class_name
+        test_result.test_name = test.test_name
+        test_result.stacktrace = "error_msg: mark blocked"
+        test_result.num_tests = 1
+        test_result.run_time = 0
+        test_result.current = self.state_machine.running_test_index + 1
+        test_result.code = ResultCode.BLOCKED.value
+        test_result = copy.copy(test_result)
+        for listener in listeners:
+            listener.__started__(LifeCycle.TestCase, test_result)
+        test_result = copy.copy(test_result)
+        for listener in listeners:
+            listener.__ended__(LifeCycle.TestCase, test_result)
+        self.state_machine.running_test_index += 1
+
+    def _mark_all_test_case(self):
+        if not self.expect_tests_dict:
+            return
+        all_suite_set = set(self.expect_tests_dict.keys())
+        un_suite_set = all_suite_set.difference(self.marked_suite_set)
+        for un_suite_name in un_suite_set:
+            test_list = self.expect_tests_dict.get(un_suite_name, [])
+
+            self.state_machine.suite(reset=True)
+            self.state_machine.running_test_index = 0
+            test_suite = self.state_machine.suite()
+            test_suite.suite_name = un_suite_name
+            test_suite.test_num = len(test_list)
+            for listener in self.get_listeners():
+                suite_report = copy.copy(test_suite)
+                listener.__started__(LifeCycle.TestSuite, suite_report)
+
+            for test in test_list:
+                self._mock_test_case_life_cycle(self.get_listeners(), test)
+
+            test_suite.is_completed = True
+            for listener in self.get_listeners():
+                suite = copy.copy(test_suite)
+                listener.__ended__(LifeCycle.TestSuite, suite, is_clear=True)
 
 
 @Plugin(type=Plugin.PARSER, id=CommonParserType.oh_kernel_test)
@@ -816,7 +883,7 @@ class OHKernelTestParser(IParser):
                 self.handle_suite_start_tag(line)
             elif FINISHED_TO_TEST in line:
                 self.handle_suite_end_tag(line)
-            elif line.endswith(PASS_DOT):
+            elif line.endswith(PASS_DOT) or line.endswith(FAIL_DOT):
                 self.handle_one_test_case_tag(line)
             elif line.endswith(ERROR_EXCLAMATION) \
                     or line.endswith(TIMEOUT_EXCLAMATION):
@@ -938,6 +1005,7 @@ class OHJSUnitPrefixes(Enum):
     STATUS_CODE = "OHOS_REPORT_STATUS_CODE: "
     RESULT = "OHOS_REPORT_RESULT: "
     CODE = "OHOS_REPORT_CODE: "
+    TestFinished = "TestFinished-ResultCode: 0"
 
 
 @Plugin(type=Plugin.PARSER, id=CommonParserType.oh_jsunit)
@@ -952,7 +1020,6 @@ class OHJSUnitTestParser(IParser):
         self.start_time = datetime.datetime.now()
         self.test_time = 0
         self.test_run_finished = False
-        self.no_pass_indexes = []
 
     def get_suite_name(self):
         return self.suite_name
@@ -975,6 +1042,8 @@ class OHJSUnitTestParser(IParser):
         elif line.startswith(OHJSUnitPrefixes.STATUS_CODE.value):
             self.submit_current_key_value()
             self.parse_status_code(line)
+        elif line.startswith(OHJSUnitPrefixes.TestFinished.value):
+            self.handle_suite_end()
 
     def submit_current_key_value(self):
         if self.current_key and self.current_value:
@@ -1036,9 +1105,8 @@ class OHJSUnitTestParser(IParser):
                 listener.__ended__(LifeCycle.TestCase, result)
                 if listener.__class__.__name__ == "ReportListener":
                     index = list(listener.tests.keys())[-1]
-                    self.no_pass_indexes.append(index)
+                    listener.tests.pop(index)
             test_info.is_completed = True
-
         elif test_info.code == StatusCodes.ERROR.value:
             self.state_machine.running_test_index += 1
             test_info.current = self.state_machine.running_test_index
@@ -1051,7 +1119,7 @@ class OHJSUnitTestParser(IParser):
                 listener.__ended__(LifeCycle.TestCase, result)
                 if listener.__class__.__name__ == "ReportListener":
                     index = list(listener.tests.keys())[-1]
-                    self.no_pass_indexes.append(index)
+                    listener.tests.pop(index)
             test_info.is_completed = True
         elif test_info.code == StatusCodes.SUCCESS.value:
             self.state_machine.running_test_index += 1
@@ -1099,26 +1167,47 @@ class OHJSUnitTestParser(IParser):
         suite_result.is_completed = True
         for listener in self.get_listeners():
             suite = copy.copy(suite_result)
-            listener.__ended__(LifeCycle.TestSuite, suite,
-                               suite_report=True)
-            if listener.__class__.__name__ == "ReportListener":
-                for index in self.no_pass_indexes:
-                    if index in listener.tests:
-                        listener.tests.pop(index)
+            listener.__ended__(LifeCycle.TestSuites, suite,
+                               suites_name=self.suite_name)
         self.state_machine.current_suite = None
 
     def mark_test_as_blocked(self, test):
-        test_info = self.state_machine.test()
-        if test_info:
-            test_info.test_class = test.class_name
-            test_info.test_name = test.test_name
-            test_info.num_tests = 1
-            test_info.run_time = 0
-            test_info.code = StatusCodes.START.value
-            self.report_result(test_info)
-            test_info.code = StatusCodes.BLOCKED.value
-            self.report_result(test_info)
-            self.__done__()
+        if not self.state_machine.current_suite and not test.class_name:
+            return
+        suite_name = self.state_machine.current_suite.suite_name if \
+            self.state_machine.current_suite else self.get_suite_name()
+        suite_result = self.state_machine.suite(reset=True)
+        test_result = self.state_machine.test(reset=True)
+        suite_result.suite_name = suite_name or test.class_name
+        suite_result.suite_num = 1
+        test_result.test_class = test.class_name
+        test_result.test_name = test.test_name
+        test_result.stacktrace = "error_msg: marked blocked"
+        test_result.num_tests = 1
+        test_result.run_time = 0
+        test_result.code = ResultCode.BLOCKED.value
+        for listener in self.get_listeners():
+            suite_report = copy.copy(suite_result)
+            listener.__started__(LifeCycle.TestSuite, suite_report)
+        for listener in self.get_listeners():
+            test_result = copy.copy(test_result)
+            listener.__started__(LifeCycle.TestCase, test_result)
+        for listener in self.get_listeners():
+            test_result = copy.copy(test_result)
+            listener.__ended__(LifeCycle.TestCase, test_result)
+        for listener in self.get_listeners():
+            suite_report = copy.copy(suite_result)
+            listener.__ended__(LifeCycle.TestSuite, suite_report,
+                               is_clear=True)
+        self.__done__()
+
+    def handle_suite_end(self):
+        suite_result = self.state_machine.suite()
+        suite_result.run_time = self.test_time
+        suite_result.is_completed = True
+        for listener in self.get_listeners():
+            suite = copy.copy(suite_result)
+            listener.__ended__(LifeCycle.TestSuite, suite, is_clear=True)
 
 
 @Plugin(type=Plugin.PARSER, id=CommonParserType.oh_jsunit_list)
