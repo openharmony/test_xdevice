@@ -947,8 +947,14 @@ def get_app_name(hap_app):
         zif_file = zipfile.ZipFile(hap_app)
         zif_file.extractall(path=temp_dir)
         config_json_file = os.path.join(temp_dir, "config.json")
+        name_list = ["module.json", "config.json"]
+        for f_name in os.listdir(temp_dir):
+            if f_name in name_list:
+                config_json_file = os.path.join(temp_dir, f_name)
+                break
         if not os.path.exists(config_json_file):
-            LOG.debug("config.json not in %s.hap" % hap_name)
+            LOG.debug("Neither config.json nor module.json in %s.hap"
+                      % hap_name)
         else:
             flags = os.O_RDONLY
             modes = stat.S_IWUSR | stat.S_IRUSR
