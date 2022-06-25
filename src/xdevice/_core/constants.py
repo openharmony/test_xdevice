@@ -233,6 +233,7 @@ class CKit:
     deploytool = "DeployToolKit"
     component = "ComponentKit"
 
+
 @dataclass
 class GTestConst(object):
     exec_para_filter = "--gtest_filter"
@@ -253,6 +254,7 @@ class ConfigConst(object):
     testlist = "testlist"
     testfile = "testfile"
     testcase = "testcase"
+    testdict = "testdict"
     device_sn = "device_sn"
     report_path = "report_path"
     resource_path = "resource_path"
@@ -270,8 +272,8 @@ class ConfigConst(object):
     check_device = "check_device"
     configfile = "config"
     repeat = "repeat"
-    subsystem = "subsystem"
-    part = "part"
+    subsystems = "subsystems"
+    parts = "parts"
 
     # Runtime Constant
     history_report_path = "history_report_path"
@@ -292,4 +294,3 @@ class FilePermission(object):
     mode_777 = 0o777
     mode_755 = 0o755
     mode_644 = 0o644
-    

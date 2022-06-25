@@ -1613,7 +1613,7 @@ class JSUnitTestDriver(IDriver):
             self.error_message = exception
             if not getattr(exception, "error_no", ""):
                 setattr(exception, "error_no", "03409")
-            LOG.exception(self.error_message, exc_info=True, error_no="03409")
+            LOG.exception(self.error_message, exc_info=False, error_no="03409")
             raise exception
         finally:
             self.config.device.stop_catch_device_log()
@@ -1623,103 +1623,128 @@ class JSUnitTestDriver(IDriver):
     def generate_console_output(self, device_log_file, request, timeout):
         LOG.info("prepare to read device log, may wait some time")
         message_list = list()
-        _, end_count, is_suites_end = self.read_device_log_timeout(
+        label_list, suite_info, is_suites_end = self.read_device_log_timeout(
             device_log_file, message_list, timeout)
         if not is_suites_end:
             message_list.append("app Log: [end] run suites end\n")
-            LOG.error("there is no suites end")
-        if end_count == 0:
-            message_list.append("app Log: [suite end]\n")
-            LOG.error("there is no suite end")
+            LOG.warning("there is no suites end")
+        if len(label_list[0]) > 0 and sum(label_list[0]) != 0:
+            # the problem happened! when the sum of label list is not zero
+            for i in range(len(label_list[0])):
+                if label_list[0][i] == 1:  # this is the start label
+                    if i + 1 < len(label_list[0]):  # peek backward
+                        if label_list[0][i + 1] == 1:  # lack the end label
+                            message_list.insert(label_list[1][i + 1],
+                                                "app Log: [suite end]\n")
+                            LOG.warning("there is no suite end")
+                            for j in range(i + 1, len(label_list[1])):
+                                label_list[1][j] += 1  # move the index to next
+                    else:  # at the tail
+                        message_list.insert(-1, "app Log: [suite end]\n")
+                        LOG.warning("there is no suite end")
 
         result_message = "".join(message_list)
         message_list.clear()
+        expect_tests_dict = self._parse_suite_info(suite_info)
+        self._analyse_tests(request, result_message, expect_tests_dict)
 
-        report_name = request.get_module_name()
+    def _analyse_tests(self, request, result_message, expect_tests_dict):
+        listener_copy = request.listeners.copy()
         parsers = get_plugin(
             Plugin.PARSER, CommonParserType.jsunit)
         if parsers:
             parsers = parsers[:1]
-        for listener in request.listeners:
+        for listener in listener_copy:
             listener.device_sn = self.config.device.device_sn
         parser_instances = []
-
         for parser in parsers:
             parser_instance = parser.__class__()
-            parser_instance.suites_name = report_name
-            parser_instance.suite_name = report_name
-            parser_instance.listeners = request.listeners
+            parser_instance.suites_name = request.get_module_name()
+            parser_instance.listeners = listener_copy
             parser_instances.append(parser_instance)
         handler = ShellHandler(parser_instances)
+        handler.parsers[0].expect_tests_dict = expect_tests_dict
         process_command_ret(result_message, handler)
 
-    def read_device_log(self, device_log_file, timeout=60):
-        LOG.info("The timeout is {} seconds".format(timeout))
-
-        while time.time() - self.start_time <= timeout:
-            result_message = ""
-            with open(device_log_file, "r", encoding='utf-8',
-                     errors='ignore') as file_read_pipe:
-                while True:
-                    try:
-                        line = file_read_pipe.readline()
-                    except (UnicodeDecodeError, UnicodeError) as error:
-                        LOG.warning("While read log file: %s" % error)
-                    if not line :
-                        break
-                    if line.lower().find("jsapp:") != -1:
-                        result_message += line
-                    if "[end] run suites end" in line:
-                        LOG.info("Find the end mark then analysis result")
-                        return result_message
-                # if test not finished, wait 5 seconds
-                else:
-                    LOG.info("did not find the end mark then wait 5 seconds")
-                    time.sleep(5)
-        else:
-            LOG.error("Hjsunit run timeout {}s reached".format(timeout))
-            raise RuntimeError("Hjsunit run timeout!")
+    @classmethod
+    def _parse_suite_info(cls, suite_info):
+        tests_dict = dict()
+        test_count = 0
+        if suite_info:
+            LOG.debug("Suites info: %s" % suite_info)
+            json_str = "".join(suite_info)
+            try:
+                suite_dict_list = json.loads(json_str).get("suites", [])
+                for suite_dict in suite_dict_list:
+                    for class_name, test_name_dict_list in suite_dict.items():
+                        tests_dict.update({class_name: []})
+                        for test_name_dict in test_name_dict_list:
+                            for test_name in test_name_dict.values():
+                                test = TestDescription(class_name, test_name)
+                                tests_dict.get(class_name).append(test)
+            except json.decoder.JSONDecodeError as json_error:
+                LOG.warning("Suites info is invalid: %s" % json_error)
+        LOG.debug("Collect suite count is %s, test count is %s" %
+                  (len(tests_dict), test_count))
+        return tests_dict
 
     def read_device_log_timeout(self, device_log_file,
                                 message_list, timeout):
         LOG.info("The timeout is {} seconds".format(timeout))
-        suite_end_count = 0
-        suite_start_count = 0
         pattern = "^\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+(\\d+)"
-        while time.time() - self.start_time <= timeout: 
-
+        while time.time() - self.start_time <= timeout:
             with open(device_log_file, "r", encoding='utf-8',
                       errors='ignore') as file_read_pipe:
                 pid = ""
                 message_list.clear()
+                label_list = [[], []]  # [-1, 1 ..] [line1, line2 ..]
+                suite_info = []
                 while True:
                     try:
                         line = file_read_pipe.readline()
-                    except (UnicodeDecodeError, UnicodeError) as error:
+                    except UnicodeError as error:
                         LOG.warning("While read log file: %s" % error)
                     if not line:
-                        time.sleep(2)  # wait for log write to file
+                        time.sleep(5)  # wait for log write to file
                         break
                     if line.lower().find("jsapp:") != -1:
-                        if not pid and "[start] start run suites" in line:
-                            matcher = re.match(pattern, line.strip())
-                            if matcher and matcher.group(1):
-                                pid = matcher.group(1)
-                            else:
-                                LOG.warning("Can't find pid in suites start")
+                        if "[suites info]" in line:
+                            _, pos = re.match(".+\\[suites info]", line).span()
+                            suite_info.append(line[pos:].strip())
+
+                        if "[start] start run suites" in line:  # 发现了任务开始标签
+                            pid, is_update = \
+                                self._init_suites_start(line, pattern, pid)
+                            if is_update:
+                                message_list.clear()
+                                label_list[0].clear()
+                                label_list[1].clear()
+
                         if not pid or pid not in line:
                             continue
                         message_list.append(line)
                         if "[suite end]" in line:
-                            suite_end_count += 1
+                            label_list[0].append(-1)
+                            label_list[1].append(len(message_list) - 1)
                         if "[suite start]" in line:
-                            suite_start_count += 1
+                            label_list[0].append(1)
+                            label_list[1].append(len(message_list) - 1)
                         if "[end] run suites end" in line:
                             LOG.info("Find the end mark then analysis result")
-                            return suite_start_count, suite_end_count, True
+                            LOG.debug("current JSApp pid= %s" % pid)
+                            return label_list, suite_info, True
         else:
             LOG.error("Hjsunit run timeout {}s reached".format(timeout))
-            return suite_start_count, suite_end_count, False
+            LOG.debug("current JSApp pid= %s" % pid)
+            return label_list, suite_info, False
+
+    @classmethod
+    def _init_suites_start(cls, line, pattern, pid):
+        matcher = re.match(pattern, line.strip())
+        if matcher and matcher.group(1):
+            pid = matcher.group(1)
+            return pid, True
+        return pid, False
 
     def _run_jsunit(self, config_file, request):
         try:
@@ -1746,6 +1771,10 @@ class JSUnitTestDriver(IDriver):
 
             hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                                  0o755)
+
+            with os.fdopen(hilog_open, "a") as hilog_file_pipe:
+                self.config.device.start_catch_device_log(hilog_file_pipe)
+
             # execute test case
             command = "shell aa start -d 123 -a %s -b %s" \
                       % (ability_name, package)
@@ -1760,9 +1789,6 @@ class JSUnitTestDriver(IDriver):
                 LOG.info("execute %s's testcase failed. result value=%s"
                          % (package, result_value))
                 raise RuntimeError("hjsunit test run error happened!")
-
-            with os.fdopen(hilog_open, "a") as hilog_file_pipe:
-                self.config.device.start_catch_device_log(hilog_file_pipe)
 
             self.start_time = time.time()
             timeout_config = get_config_value('test-timeout',
@@ -1979,11 +2005,6 @@ class OHKernelTestDriver(IDriver):
             do_module_kit_teardown(request)
 
     def _get_driver_config(self, json_config):
-        LOG.info("_get_driver_config")
-        d = dict(json_config.get_driver())
-        for key in d.keys():
-            LOG.info("%s:%s" % (key, d[key]))
-
         target_test_path = get_config_value('native-test-device-path',
                                             json_config.get_driver(), False)
         test_suite_name = get_config_value('test-suite-name',
