@@ -165,12 +165,12 @@ class PushKit(ITestKit):
                         LOG.debug(
                             "Push file finished from {} to {}".format(
                                 os.path.join(root, file), dst))
-                        self.pushed_file.append(file)
+                        self.pushed_file.append(os.path.join(dst, file))
             else:
                 device.hdc_command("file send {} {}".format(real_src_path,
                                                             dst))
                 LOG.debug("Push file finished from {} to {}".format(src, dst))
-                self.pushed_file.append(real_src_path)
+                self.pushed_file.append(dst)
         for command in self.post_push:
             run_command(device, command)
         return self.pushed_file, dst
