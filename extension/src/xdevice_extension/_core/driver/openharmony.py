@@ -235,7 +235,7 @@ class OHJSUnitTestDriver(IDriver):
 
             hilog_open = os.open(hilog, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                                  0o755)
-
+            self.config.device.execute_shell_command(command="hilog -r")
             with os.fdopen(hilog_open, "a") as hilog_file_pipe:
                 self.config.device.start_catch_device_log(hilog_file_pipe)
                 self._run_oh_jsunit(config_file, request)
