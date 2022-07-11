@@ -21,10 +21,12 @@ from xdevice import LifeCycle
 from xdevice import IListener
 from xdevice import platform_logger
 from xdevice import TestDescription
+from xdevice import ResultCode
 
 from xdevice_extension._core.constants import ListenerType
 
-__all__ = ["CollectingTestListener", "CollectingLiteGTestListener"]
+__all__ = ["CollectingTestListener", "CollectingLiteGTestListener",
+           "CollectingPassListener"]
 
 LOG = platform_logger("Listener")
 
@@ -93,6 +95,42 @@ class CollectingLiteGTestListener(IListener):
                                    test_result.test_name)
             if test not in self.tests:
                 self.tests.append(test)
+
+    def get_current_run_results(self):
+        return self.tests
+
+
+@Plugin(type=Plugin.LISTENER, id=ListenerType.collect_pass)
+class CollectingPassListener(IListener):
+    """
+    listener test status information to the console
+    """
+
+    def __init__(self):
+        self.tests = []
+
+    def __started__(self, lifecycle, test_result):
+        pass
+
+    def __ended__(self, lifecycle, test_result=None, **kwargs):
+        if lifecycle == LifeCycle.TestCase:
+            if not test_result.test_class or not test_result.test_name:
+                return
+            if test_result.code != ResultCode.PASSED.value:
+                return
+            test = TestDescription(test_result.test_class,
+                                   test_result.test_name)
+            if test not in self.tests:
+                self.tests.append(test)
+            else:
+                LOG.warning("Duplicate testcase: %s#%s" % (
+                    test_result.test_class, test_result.test_name))
+
+    def __skipped__(self, lifecycle, test_result):
+        pass
+
+    def __failed__(self, lifecycle, test_result):
+        pass
 
     def get_current_run_results(self):
         return self.tests

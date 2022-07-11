@@ -19,11 +19,13 @@
 import os
 import json
 import copy
+import stat
 from collections import namedtuple
 
 from _core.constants import DeviceTestType
 from _core.constants import ModeType
 from _core.constants import HostDrivenTestType
+from _core.constants import ConfigConst
 from _core.exception import ParamError
 from _core.logger import platform_logger
 from _core.utils import get_filename_extension
@@ -51,6 +53,7 @@ EXT_TYPE_DICT = {".hap": DeviceTestType.hap_test,
 PY_SUFFIX = ".py"
 PYD_SUFFIX = ".pyd"
 MODULE_CONFIG_SUFFIX = ".json"
+MODULE_INFO_SUFFIX = ".moduleInfo"
 MAX_DIR_DEPTH = 6
 LOG = platform_logger("TestSource")
 
@@ -79,14 +82,14 @@ def _get_testcases_dirs(config):
     from xdevice import Variables
     # add config.testcases_path and its subfolders
     testcases_dirs = []
-    if getattr(config, "testcases_path", ""):
+    if getattr(config, ConfigConst.testcases_path, ""):
         testcases_dirs = [config.testcases_path]
         _append_subfolders(config.testcases_path, testcases_dirs)
 
     # add inner testcases dir and its subfolders
     inner_testcases_dir = os.path.abspath(os.path.join(
         Variables.top_dir, "testcases"))
-    if getattr(config, "testcases_path", "") and os.path.normcase(
+    if getattr(config, ConfigConst.testcases_path, "") and os.path.normcase(
             config.testcases_path) != os.path.normcase(inner_testcases_dir):
         testcases_dirs.append(inner_testcases_dir)
         _append_subfolders(inner_testcases_dir, testcases_dirs)
@@ -109,7 +112,7 @@ def _append_subfolders(testcases_path, testcases_dirs):
 
 def find_testdict_descriptors(config):
     from xdevice import Variables
-    if getattr(config, "testdict", "") == "":
+    if getattr(config, ConfigConst.testdict, "") == "":
         return None
     testdict = config.testdict
     test_descriptors = []
@@ -128,27 +131,56 @@ def find_testdict_descriptors(config):
     return test_descriptors
 
 
+def _append_component_test_source(config, testcases_dir, test_sources):
+    subsystem_list = config.subsystems if config.subsystems else list()
+    part_list = config.parts if config.parts else list()
+    module_info_files = _get_component_info_file(testcases_dir)
+    result_dict = dict()
+    for info_file in module_info_files:
+        flags = os.O_RDONLY
+        modes = stat.S_IWUSR | stat.S_IRUSR
+        with os.fdopen(os.open(info_file, flags, modes), "r") as f_handler:
+            result_dict.update(json.load(f_handler))
+        module_name = result_dict.get("module_name", "")
+        part_name = result_dict.get("part_name", "")
+        subsystem_name = result_dict.get("subsystem", "")
+        if not module_name or not part_name or not subsystem_name:
+            continue
+        module_config_file = \
+            os.path.join(os.path.dirname(info_file), module_name)
+        is_append = True
+        if subsystem_list or part_list:
+            if part_name not in part_list and \
+                    subsystem_name not in subsystem_list:
+                is_append = False
+        if is_append:
+            getattr(config, ConfigConst.component_mapper, dict()).update(
+                {module_name: (subsystem_name, part_name)})
+            test_sources.append(module_config_file)
+
+
 def _get_test_sources(config, testcases_dirs):
     test_sources = []
 
     # get test sources from testcases_dirs
     if not config.testfile and not config.testlist and not config.testcase \
-            and config.task:
+            and not config.subsystems and not config.parts and not \
+            getattr(config, ConfigConst.component_base_kit, "") and\
+            config.task:
         for testcases_dir in testcases_dirs:
             _append_module_test_source(testcases_dir, test_sources)
         return test_sources
 
     # get test sources from config.testlist
-    if getattr(config, "testlist", ""):
+    if getattr(config, ConfigConst.testlist, ""):
         for test_source in config.testlist.split(";"):
             if test_source.strip():
                 test_sources.append(test_source.strip())
         return test_sources
 
     # get test sources from config.testfile
-    if getattr(config, "testfile", ""):
+    if getattr(config, ConfigConst.testfile, ""):
         test_file = _get_test_file(config, testcases_dirs)
-        import stat
         flags = os.O_RDONLY
         modes = stat.S_IWUSR | stat.S_IRUSR
         with os.fdopen(os.open(test_file, flags, modes), "r") as file_content:
@@ -157,10 +189,19 @@ def _get_test_sources(config, testcases_dirs):
                     test_sources.append(line.strip())
 
     # get test sources from config.testcase
-    if getattr(config, "testcase", ""):
+    if getattr(config, ConfigConst.testcase, ""):
         for test_source in config.testcase.split(";"):
             if test_source.strip():
                 test_sources.append(test_source.strip())
+        return test_sources
+
+    # get test sources according *.moduleInfo file
+    if getattr(config, ConfigConst.subsystems, []) or getattr(
+            config, ConfigConst.parts, []) or \
+            getattr(config, ConfigConst.component_base_kit, ""):
+        setattr(config, ConfigConst.component_mapper, dict())
+        for testcases_dir in testcases_dirs:
+            _append_component_test_source(config, testcases_dir, test_sources)
         return test_sources
     return test_sources
 
@@ -368,6 +409,18 @@ def _get_testcase_config_file(filename):
         depth += 1
         dirname = os.path.dirname(dirname)
     return None
+
+
+def _get_component_info_file(entry_dir):
+    module_files = []
+    if not os.path.isdir(entry_dir):
+        return module_files
+    for item in os.listdir(entry_dir):
+        item_path = os.path.join(entry_dir, item)
+        if os.path.isfile(item_path) and item_path.endswith(
+                MODULE_INFO_SUFFIX):
+            module_files.append(item_path)
+    return module_files
 
 
 def _get_test_type(config_file, test_driver, ext):

@@ -39,6 +39,7 @@ def main():
           entry_points={
               'driver': [
                   'drivers=xdevice_extension._core.driver.drivers',
+                  'openharmony=xdevice_extension._core.driver.openharmony',
                   'kunpeng=xdevice_extension._core.driver.kunpeng'
               ],
               'parser': [

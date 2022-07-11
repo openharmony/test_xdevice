@@ -137,6 +137,7 @@ class DeviceTestType(object):
     build_only_test = "BuildOnlyTestLite"
     ltp_posix_test = "LtpPosixTest"
     oh_kernel_test = "OHKernelTest"
+    oh_jsunit_test = "OHJSUnitTest"
 
 
 @dataclass
@@ -191,6 +192,7 @@ class ListenerType:
     upload = "Upload"
     collect = "Collect"
     collect_lite = "CollectLite"
+    collect_pass = "CollectPass"
 
 
 @dataclass
@@ -210,6 +212,8 @@ class CommonParserType:
     junit = "JUnit"
     ltp_posix = "LtpPosixTest"
     oh_kernel_test = "OHKernel"
+    oh_jsunit = "OHJSUnit"
+    oh_jsunit_list = "OHJSUnitList"
 
 
 @dataclass
@@ -238,7 +242,7 @@ class CKit:
     shell = "ShellKit"
     testbundle = "TestBundleKit"
     appinstall = "AppInstallKit"
-
+    component = "ComponentKit"
 
 @dataclass
 class GTestConst(object):

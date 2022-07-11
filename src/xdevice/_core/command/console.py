@@ -297,6 +297,16 @@ class Console(object):
                                 dest=ConfigConst.repeat,
                                 help="number of times that a task is executed"
                                      " repeatedly")
+            parser.add_argument("-s", "--subsystem",
+                                dest="subsystems",
+                                action="store",
+                                type=str,
+                                help="- Specify the list of subsystem")
+            parser.add_argument("-p", "--part",
+                                dest="parts",
+                                action="store",
+                                type=str,
+                                help="- Specify the list of part")
             self._params_pre_processing(para_list)
             (options, unparsed) = parser.parse_known_args(para_list)
             if unparsed:
@@ -336,14 +346,20 @@ class Console(object):
                     ConfigConst.pass_through: options.testargs})
         if not options.resource_path:
             resource_path = UserConfigManager(
-                config_file=options.config, env=options.test_environment).\
+                config_file=options.config, env=options.test_environment). \
                 get_resource_path()
             setattr(options, ConfigConst.resource_path, resource_path)
         if not options.testcases_path:
             testcases_path = UserConfigManager(
-                config_file=options.config, env=options.test_environment).\
+                config_file=options.config, env=options.test_environment). \
                 get_testcases_dir()
             setattr(options, ConfigConst.testcases_path, testcases_path)
+        if options.subsystems:
+            subsystem_list = str(options.subsystems).split(";")
+            setattr(options, ConfigConst.subsystems, subsystem_list)
+        if options.parts:
+            part_list = str(options.parts).split(";")
+            setattr(options, ConfigConst.parts, part_list)
 
     def command_parser(self, args):
         try:
@@ -420,7 +436,7 @@ class Console(object):
             split_list = list(history_command.split())
             if "--repeat" in split_list:
                 pos = split_list.index("--repeat")
-                split_list = split_list[:pos] + split_list[pos+2:]
+                split_list = split_list[:pos] + split_list[pos + 2:]
                 history_command = " ".join(split_list)
 
         (options, _, _, _) = self.argument_parser(history_command.split())
@@ -747,7 +763,7 @@ TEST_ENVIRONMENT [TEST_ENVIRONMENT ...]
 Examples:
     run -l <module name>;<module name>
     run -tf test/resource/<test file name>.txt 
-    
+
     run –l <module name> -sn <device serial number>;<device serial number>
     run –l <module name> -respath <path of resource>
     run –l <module name> -ta size:large
@@ -758,22 +774,22 @@ Examples:
     run –l <module name> –t ALL
     run –l <module name> –td CppTest
     run –l <module name> -tcpath resource/testcases
-    
+
     run ssts
     run ssts –tc <python script name>;<python script name>
     run ssts -sn <device serial number>;<device serial number>
     run ssts -respath <path of resource>
     ... ...   
-    
+
     run acts
     run acts –tc <python script name>;<python script name>
     run acts -sn <device serial number>;<device serial number>
     run acts -respath <path of resource>
     ... ...
-    
+
     run hits
     ... ...
-    
+
     run --retry
     run --retry --session <report folder name>
     run --retry --dryrun
@@ -785,7 +801,7 @@ usage:
     list 
     list history
     list <id>
-       
+
 Introduction:
     list:         display device list 
     list history: display history record of a serial of tasks
@@ -797,10 +813,9 @@ Examples:
     list 6e****90
 """
 
-
 GUIDE_INFORMATION = """help:
     use help to get  information.
-    
+
 usage:
     run:  Display a list of supported run command.
     list: Display a list of supported device and task record.

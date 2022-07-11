@@ -231,6 +231,7 @@ class CKit:
     liteshell = "LiteShellKit"
     app_install = "AppInstallKit"
     deploytool = "DeployToolKit"
+    component = "ComponentKit"
 
 
 @dataclass
@@ -253,6 +254,7 @@ class ConfigConst(object):
     testlist = "testlist"
     testfile = "testfile"
     testcase = "testcase"
+    testdict = "testdict"
     device_sn = "device_sn"
     report_path = "report_path"
     resource_path = "resource_path"
@@ -270,6 +272,8 @@ class ConfigConst(object):
     check_device = "check_device"
     configfile = "config"
     repeat = "repeat"
+    subsystems = "subsystems"
+    parts = "parts"
 
     # Runtime Constant
     history_report_path = "history_report_path"
@@ -281,10 +285,12 @@ class ConfigConst(object):
     module_kits = "module_kits"
     spt = "spt"
     version = "version"
+    component_mapper = "_component_mapper"
+    component_base_kit = "component_base_kit"
+    support_component = "support_component"
 
 
 class FilePermission(object):
     mode_777 = 0o777
     mode_755 = 0o755
     mode_644 = 0o644
-    
