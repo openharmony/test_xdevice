@@ -1630,23 +1630,30 @@ class JSUnitTestDriver(IDriver):
             LOG.warning("there is no suites end")
         if len(label_list[0]) > 0 and sum(label_list[0]) != 0:
             # the problem happened! when the sum of label list is not zero
-            for i in range(len(label_list[0])):
-                if label_list[0][i] == 1:  # this is the start label
-                    if i + 1 < len(label_list[0]):  # peek backward
-                        if label_list[0][i + 1] == 1:  # lack the end label
-                            message_list.insert(label_list[1][i + 1],
-                                                "app Log: [suite end]\n")
-                            LOG.warning("there is no suite end")
-                            for j in range(i + 1, len(label_list[1])):
-                                label_list[1][j] += 1  # move the index to next
-                    else:  # at the tail
-                        message_list.insert(-1, "app Log: [suite end]\n")
-                        LOG.warning("there is no suite end")
+            self._insert_suite_end(label_list, message_list)
 
         result_message = "".join(message_list)
         message_list.clear()
         expect_tests_dict = self._parse_suite_info(suite_info)
         self._analyse_tests(request, result_message, expect_tests_dict)
+
+    @classmethod
+    def _insert_suite_end(cls, label_list, message_list):
+        for i in range(len(label_list[0])):
+            if label_list[0][i] != 1:  # skipp
+                continue
+            # check the start label, then peek next position
+            if i + 1 == len(label_list[0]):  # next position at the tail
+                message_list.insert(-1, "app Log: [suite end]\n")
+                LOG.warning("there is no suite end")
+                continue
+            if label_list[0][i + 1] != 1:  # 0 present the end label
+                continue
+            message_list.insert(label_list[1][i + 1],
+                                "app Log: [suite end]\n")
+            LOG.warning("there is no suite end")
+            for j in range(i + 1, len(label_list[1])):
+                label_list[1][j] += 1  # move the index to next
 
     def _analyse_tests(self, request, result_message, expect_tests_dict):
         listener_copy = request.listeners.copy()
@@ -1682,6 +1689,7 @@ class JSUnitTestDriver(IDriver):
                             for test_name in test_name_dict.values():
                                 test = TestDescription(class_name, test_name)
                                 tests_dict.get(class_name).append(test)
+                                test_count += 1
             except json.decoder.JSONDecodeError as json_error:
                 LOG.warning("Suites info is invalid: %s" % json_error)
         LOG.debug("Collect suite count is %s, test count is %s" %
@@ -1926,7 +1934,7 @@ class LTPPosixTestDriver(IDriver):
                         parser_instances.append(parser_instance)
                     self.handler = ShellHandler(parser_instances)
                     result_message = self.config.device.hdc_command(
-                        "shell {}{}".format(dst, test_bin))
+                        "shell {}".format(test_bin))
                     LOG.info("get result from command {}".
                              format(result_message))
                     process_command_ret(result_message, self.handler)
