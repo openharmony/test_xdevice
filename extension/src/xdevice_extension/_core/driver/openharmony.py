@@ -290,7 +290,7 @@ class OHJSUnitTestDriver(IDriver):
         if not package and not module:
             raise ParamError("Neither package nor moodle is found"
                              " in config file.", error_no="03201")
-        timeout_config = get_config_value("test-timeout",
+        timeout_config = get_config_value("shell-timeout",
                                           json_config.get_driver(), False)
         if timeout_config:
             self.config.timeout = int(timeout_config)
@@ -302,6 +302,11 @@ class OHJSUnitTestDriver(IDriver):
                                         json_config.get_driver(), False)
         if test_timeout:
             self.runner.add_arg("wait_time", int(test_timeout))
+
+        testcase_timeout = get_config_value('testcase-timeout',
+                                            json_config.get_driver(), False)
+        if testcase_timeout:
+            self.runner.add_arg("timeout", int(testcase_timeout))
 
     def _do_test_run(self, listener):
         test_to_run = self._collect_test_to_run()
