@@ -36,6 +36,7 @@ from xdevice import ParamError
 from xdevice import get_file_absolute_path
 from xdevice import get_config_value
 from xdevice import exec_cmd
+from xdevice import ConfigConst
 
 from xdevice_extension._core.constants import CKit
 from xdevice_extension._core.environment.dmlib import CollectingOutputReceiver
@@ -47,8 +48,8 @@ from xdevice_extension._core.utils import convert_serial
 
 
 __all__ = ["STSKit", "PushKit", "PropertyCheckKit", "ShellKit", "WifiKit",
-           "ConfigKit", "AppInstallKit", "junit_para_parse",
-           "gtest_para_parse", "reset_junit_para"]
+           "ConfigKit", "AppInstallKit", "ComponentKit", "junit_para_parse",
+           "gtest_para_parse", "reset_junit_para", "oh_jsunit_para_parse"]
 
 LOG = platform_logger("Kit")
 
@@ -164,12 +165,12 @@ class PushKit(ITestKit):
                         LOG.debug(
                             "Push file finished from {} to {}".format(
                                 os.path.join(root, file), dst))
-                        self.pushed_file.append(file)
+                        self.pushed_file.append(os.path.join(dst, file))
             else:
                 device.hdc_command("file send {} {}".format(real_src_path,
                                                             dst))
                 LOG.debug("Push file finished from {} to {}".format(src, dst))
-                self.pushed_file.append(real_src_path)
+                self.pushed_file.append(dst)
         for command in self.post_push:
             run_command(device, command)
         return self.pushed_file, dst
@@ -301,7 +302,9 @@ class ShellKit(ITestKit):
 @Plugin(type=Plugin.TEST_KIT, id=CKit.wifi)
 class WifiKit(ITestKit):
     def __init__(self):
-        pass
+        self.certfilename = ""
+        self.certpassword = ""
+        self.wifiname = ""
 
     def __check_config__(self, config):
         self.certfilename = get_config_value(
@@ -664,6 +667,89 @@ class AppInstallKit(ITestKit):
         return exec_out
 
 
+@Plugin(type=Plugin.TEST_KIT, id=CKit.component)
+class ComponentKit(ITestKit):
+
+    def __init__(self):
+        self._white_list_file = ""
+        self._white_list = ""
+        self._cap_file = ""
+        self.paths = ""
+        self.cache_subsystem = set()
+        self.cache_part = set()
+
+    def __check_config__(self, config):
+        self._white_list_file =\
+            get_config_value('white-list', config, is_list=False)
+        self._cap_file = get_config_value('cap-file', config, is_list=False)
+        self.paths = get_config_value('paths', config)
+
+    def __setup__(self, device, **kwargs):
+        if hasattr(device, ConfigConst.support_component):
+            return
+        if device.label in ["phone", "watch", "car", "tv", "tablet", "ivi"]:
+            command = "cat %s" % self._cap_file
+            result = device.execute_shell_command(command)
+            part_set = set()
+            subsystem_set = set()
+            if "{" in result:
+                for item in json.loads(result).get("components", []):
+                    part_set.add(item.get("component", ""))
+            subsystems, parts = self.get_white_list()
+            part_set.update(parts)
+            subsystem_set.update(subsystems)
+            setattr(device, ConfigConst.support_component,
+                    (subsystem_set, part_set))
+            self.cache_subsystem.update(subsystem_set)
+            self.cache_part.update(part_set)
+
+    def get_cache(self):
+        return self.cache_subsystem, self.cache_part
+
+    def get_white_list(self):
+        if not self._white_list and self._white_list_file:
+            self._white_list = self._parse_white_list()
+        return self._white_list
+
+    def _parse_white_list(self):
+        subsystem = set()
+        part = set()
+        white_json_file = os.path.normpath(self._white_list_file)
+        if not os.path.isabs(white_json_file):
+            white_json_file = \
+                get_file_absolute_path(white_json_file, self.paths)
+        if os.path.isfile(white_json_file):
+            subsystem_list = list()
+            flags = os.O_RDONLY
+            modes = stat.S_IWUSR | stat.S_IRUSR
+            with os.fdopen(os.open(white_json_file, flags, modes),
+                           "r") as file_content:
+                json_result = json.load(file_content)
+                if "subsystems" in json_result.keys():
+                    subsystem_list.extend(json_result["subsystems"])
+                for subsystem_item_list in subsystem_list:
+                    for key, value in subsystem_item_list.items():
+                        if key == "subsystem":
+                            subsystem.add(value)
+                        elif key == "components":
+                            for component_item in value:
+                                if "component" in component_item.keys():
+                                    part.add(
+                                        component_item["component"])
+
+        return subsystem, part
+
+    def __teardown__(self, device):
+        if hasattr(device, ConfigConst.support_component):
+            setattr(device, ConfigConst.support_component, None)
+        self._white_list_file = ""
+        self._white_list = ""
+        self._cap_file = ""
+        self.cache_subsystem.clear()
+        self.cache_part.clear()
+        self.cache_device.clear()
+
+
 def remount(device):
     cmd = "shell mount -o rw,remount /" \
         if device.usb_type == DeviceConnectorType.hdc else "remount"
@@ -770,6 +856,7 @@ def junit_para_parse(device, junit_paras, prefix_char="-e"):
 
     return " ".join(ret_str)
 
+
 def timeout_callback(proc):
     try:
         LOG.error("Error: execute command timeout.")
@@ -860,8 +947,14 @@ def get_app_name(hap_app):
         zif_file = zipfile.ZipFile(hap_app)
         zif_file.extractall(path=temp_dir)
         config_json_file = os.path.join(temp_dir, "config.json")
+        name_list = ["module.json", "config.json"]
+        for f_name in os.listdir(temp_dir):
+            if f_name in name_list:
+                config_json_file = os.path.join(temp_dir, f_name)
+                break
         if not os.path.exists(config_json_file):
-            LOG.debug("config.json not in %s.hap" % hap_name)
+            LOG.debug("Neither config.json nor module.json in %s.hap"
+                      % hap_name)
         else:
             flags = os.O_RDONLY
             modes = stat.S_IWUSR | stat.S_IRUSR
@@ -878,3 +971,32 @@ def get_app_name(hap_app):
                               "in %s.hap/config.json" % hap_name)
         zif_file.close()
     return app_name
+
+
+def oh_jsunit_para_parse(runner, junit_paras):
+    junit_paras = dict(junit_paras)
+    test_type_list = ["function", "performance", "reliability", "security"]
+    size_list = ["small", "medium", "large"]
+    level_list = ["0", "1", "2", "3"]
+    for para_name in junit_paras.keys():
+        para_name = para_name.strip()
+        para_values = junit_paras.get(para_name, [])
+        if para_name == "class":
+            runner.add_arg(para_name, ",".join(para_values))
+        elif para_name == "notClass":
+            runner.add_arg(para_name, ",".join(para_values))
+        elif para_name == "testType":
+            if para_values[0] not in test_type_list:
+                continue
+            # function/performance/reliability/security
+            runner.add_arg(para_name, para_values[0])
+        elif para_name == "size":
+            if para_values[0] not in size_list:
+                continue
+            # size small/medium/large
+            runner.add_arg(para_name, para_values[0])
+        elif para_name == "level":
+            if para_values[0] not in level_list:
+                continue
+            # 0/1/2/3/4
+            runner.add_arg(para_name, para_values[0])
