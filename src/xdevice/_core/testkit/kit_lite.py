@@ -351,7 +351,7 @@ class MountKit(ITestKit):
                     try:
                         os.remove(os.path.join(remote_info.get("dir"),
                                                os.path.basename(_file)))
-                    except Exception as _:
+                    except OSError as _:
                         pass
                     shutil.copy(_file, remote_info.get("dir"))
                     if check_server_file(_file, remote_info.get("dir")):
@@ -552,6 +552,8 @@ class RootFsKit(ITestKit):
 class QueryKit(ITestKit):
     def __init__(self):
         self.mount_kit = MountKit()
+        self.query = ""
+        self.properties = ""
 
     def __check_config__(self, config):
         setattr(self.mount_kit, "mount_list",
