@@ -103,14 +103,14 @@ def is_proc_running(pid, name=None):
                                 stdout=subprocess.PIPE, shell=False)
     else:
         # /bin/ps -ef | /bin/grep -v grep | /bin/grep -w pid
-        proc_sub = subprocess.Popen(["/bin/ps", "-ef"],
+        proc_sub = subprocess.Popen(["ps", "-ef"],
                                     stdout=subprocess.PIPE,
                                     shell=False)
-        proc_v_sub = subprocess.Popen(["/bin/grep", "-v", "grep"],
+        proc_v_sub = subprocess.Popen(["grep", "-v", "grep"],
                                       stdin=proc_sub.stdout,
                                       stdout=subprocess.PIPE,
                                       shell=False)
-        proc = subprocess.Popen(["/bin/grep", "-w", "%s" % pid],
+        proc = subprocess.Popen(["grep", "-w", "%s" % pid],
                                 stdin=proc_v_sub.stdout,
                                 stdout=subprocess.PIPE, shell=False)
     (out, _) = proc.communicate()
