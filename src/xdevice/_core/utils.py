@@ -571,7 +571,7 @@ def get_local_ip():
         else:
             return "127.0.0.1"
     except Exception as error:
-        Log.debug("Get local ip error: %s, skip!" % error)
+        LOG.debug("Get local ip error: %s, skip!" % error)
         return "127.0.0.1"
 
 
