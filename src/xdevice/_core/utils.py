@@ -117,9 +117,12 @@ def is_proc_running(pid, name=None):
     if platform.system() == "Windows":
         list_command = ["C:\\Windows\\System32\\tasklist"]
         find_command = ["C:\\Windows\\System32\\findstr", "%s" % pid]
+    elif platform.system() == "Darwin":
+        list_command = ["/bin/ps", "-ef"]
+        find_command = ["/usr/bin/grep", "%s" % pid]
     else:
-        list_command = ["ps", "-ef"]
-        find_command = ["grep", "%s" % pid]
+        list_command = ["/bin/ps", "-ef"]
+        find_command = ["/bin/grep", "%s" % pid]
     proc = _get_find_proc(find_command, list_command)
     (out, _) = proc.communicate()
     out = get_decode(out).strip()

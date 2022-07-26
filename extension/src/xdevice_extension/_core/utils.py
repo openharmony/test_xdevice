@@ -101,18 +101,32 @@ def is_proc_running(pid, name=None):
         proc = subprocess.Popen(["C:\\Windows\\System32\\findstr", "%s" % pid],
                                 stdin=proc_sub.stdout,
                                 stdout=subprocess.PIPE, shell=False)
-    else:
+    elif platform.system() == "Linux":
         # /bin/ps -ef | /bin/grep -v grep | /bin/grep -w pid
-        proc_sub = subprocess.Popen(["ps", "-ef"],
+        proc_sub = subprocess.Popen(["/bin/ps", "-ef"],
                                     stdout=subprocess.PIPE,
                                     shell=False)
-        proc_v_sub = subprocess.Popen(["grep", "-v", "grep"],
+        proc_v_sub = subprocess.Popen(["/bin/grep", "-v", "grep"],
                                       stdin=proc_sub.stdout,
                                       stdout=subprocess.PIPE,
                                       shell=False)
-        proc = subprocess.Popen(["grep", "-w", "%s" % pid],
+        proc = subprocess.Popen(["/bin/grep", "-w", "%s" % pid],
                                 stdin=proc_v_sub.stdout,
                                 stdout=subprocess.PIPE, shell=False)
+    elif platform.system() == "Darwin":
+        # /bin/ps -ef | /bin/grep -v grep | /bin/grep -w pid
+        proc_sub = subprocess.Popen(["/bin/ps", "-ef"],
+                                    stdout=subprocess.PIPE,
+                                    shell=False)
+        proc_v_sub = subprocess.Popen(["/usr/bin/grep", "-v", "grep"],
+                                      stdin=proc_sub.stdout,
+                                      stdout=subprocess.PIPE,
+                                      shell=False)
+        proc = subprocess.Popen(["/usr/bin/grep", "-w", "%s" % pid],
+                                stdin=proc_v_sub.stdout,
+                                stdout=subprocess.PIPE, shell=False)
+    else:
+        raise Exception("Unknown system environment.")
     (out, _) = proc.communicate()
     out = get_decode(out).strip()
     LOG.debug("check %s proc running output: %s", pid, out)
