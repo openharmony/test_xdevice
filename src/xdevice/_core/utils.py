@@ -117,6 +117,9 @@ def is_proc_running(pid, name=None):
     if platform.system() == "Windows":
         list_command = ["C:\\Windows\\System32\\tasklist"]
         find_command = ["C:\\Windows\\System32\\findstr", "%s" % pid]
+    elif platform.system() == "Darwin":
+        list_command = ["/bin/ps", "-ef"]
+        find_command = ["/usr/bin/grep", "%s" % pid]
     else:
         list_command = ["/bin/ps", "-ef"]
         find_command = ["/bin/grep", "%s" % pid]
@@ -537,37 +540,41 @@ def check_path_legal(path):
 
 
 def get_local_ip():
-    sys_type = platform.system()
-    if sys_type == "Windows":
-        _list = socket.gethostbyname_ex(socket.gethostname())
-        _list = _list[2]
-        for ip_add in _list:
-            if ip_add.startswith("10."):
-                return ip_add
+    try:
+        sys_type = platform.system()
+        if sys_type == "Windows":
+            _list = socket.gethostbyname_ex(socket.gethostname())
+            _list = _list[2]
+            for ip_add in _list:
+                if ip_add.startswith("10."):
+                    return ip_add
 
-        return socket.gethostbyname(socket.getfqdn(socket.gethostname()))
-    elif sys_type == "Darwin":
-        hostname = socket.getfqdn(socket.gethostname())
-        return socket.gethostbyname(hostname)
-    elif sys_type == "Linux":
-        real_ip = "/%s/%s" % ("hostip", "realip")
-        if os.path.exists(real_ip):
-            srw = None
-            try:
-                import codecs
-                srw = codecs.open(real_ip, "r", "utf-8")
-                lines = srw.readlines()
-                local_ip = str(lines[0]).strip()
-            except (IOError, ValueError) as error_message:
-                LOG.error(error_message)
+            return socket.gethostbyname(socket.getfqdn(socket.gethostname()))
+        elif sys_type == "Darwin":
+            hostname = socket.getfqdn(socket.gethostname())
+            return socket.gethostbyname(hostname)
+        elif sys_type == "Linux":
+            real_ip = "/%s/%s" % ("hostip", "realip")
+            if os.path.exists(real_ip):
+                srw = None
+                try:
+                    import codecs
+                    srw = codecs.open(real_ip, "r", "utf-8")
+                    lines = srw.readlines()
+                    local_ip = str(lines[0]).strip()
+                except (IOError, ValueError) as error_message:
+                    LOG.error(error_message)
+                    local_ip = "127.0.0.1"
+                finally:
+                    if srw is not None:
+                        srw.close()
+            else:
                 local_ip = "127.0.0.1"
-            finally:
-                if srw is not None:
-                    srw.close()
+            return local_ip
         else:
-            local_ip = "127.0.0.1"
-        return local_ip
-    else:
+            return "127.0.0.1"
+    except Exception as error:
+        LOG.debug("Get local ip error: %s, skip!" % error)
         return "127.0.0.1"
 
 

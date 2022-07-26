@@ -30,9 +30,9 @@ python -c "import sys; exit(1) if sys.version_info.major < 3 or sys.version_info
     goto:eof
 )
 
-python -c "import easy_install"
+python -c "import pip"
 @if errorlevel 1 (
-    @echo "Please install setuptools first!"
+    @echo "Please install pip first!"
     goto:eof
 )
 
@@ -42,13 +42,13 @@ if not exist %TOOLS% (
 )
 
 for %%a in (%TOOLS%/*.egg) do (
-    python -m easy_install --user %TOOLS%/%%a
+    python -m pip install --user %TOOLS%/%%a
     @if errorlevel 1 (
       @echo "Error occurs to install %%a!"
     )
 )
 for %%a in (%TOOLS%/*.tar.gz) do (
-    python -m easy_install --user %TOOLS%/%%a
+    python -m pip install --user %TOOLS%/%%a
     @if errorlevel 1 (
       @echo "Error occurs to install %%a!"
     )
