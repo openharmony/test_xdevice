@@ -1684,11 +1684,12 @@ class JSUnitTestDriver(IDriver):
                 suite_dict_list = json.loads(json_str).get("suites", [])
                 for suite_dict in suite_dict_list:
                     for class_name, test_name_dict_list in suite_dict.items():
-                        tests_dict.update({class_name: []})
+                        tests_dict.update({class_name.strip(): []})
                         for test_name_dict in test_name_dict_list:
                             for test_name in test_name_dict.values():
-                                test = TestDescription(class_name, test_name)
-                                tests_dict.get(class_name).append(test)
+                                test = TestDescription(class_name.strip(),
+                                                       test_name.strip())
+                                tests_dict.get(class_name.strip()).append(test)
                                 test_count += 1
             except json.decoder.JSONDecodeError as json_error:
                 LOG.warning("Suites info is invalid: %s" % json_error)
