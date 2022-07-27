@@ -694,7 +694,7 @@ class JSUnitParser(IParser):
                        "ignore": ResultCode.SKIPPED,
                        "error": ResultCode.FAILED}
         status = status_dict.get(match.group(1))
-        return test_name, status, run_time
+        return test_name.strip(), status, run_time
 
     def handle_suites_started_tag(self):
         self.state_machine.get_suites(reset=True)
