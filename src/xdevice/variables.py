@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -86,7 +86,7 @@ def _init_global_config():
                 Variables.exec_dir = common_path
             else:
                 Variables.exec_dir = current_exec_dir
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError) as _:
             Variables.exec_dir = current_exec_dir
     Variables.source_code_rootpath = get_source_code_rootpath(
         Variables.top_dir)
@@ -116,8 +116,7 @@ def _init_logger():
 
     tool_log_file = None
     if Variables.exec_dir and os.path.normcase(
-            Variables.exec_dir) == os.path.normcase(Variables.top_dir) and \
-            not hasattr(sys, "decc_mode"):
+            Variables.exec_dir) == os.path.normcase(Variables.top_dir):
         host_log_path = os.path.join(Variables.exec_dir,
                                      Variables.report_vars.report_dir,
                                      Variables.report_vars.log_dir)

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -21,9 +21,10 @@ from dataclasses import dataclass
 __all__ = ["DeviceOsType", "ProductForm", "TestType", "TestExecType",
            "DeviceTestType", "HostTestType", "HostDrivenTestType",
            "SchedulerType", "ListenerType", "ToolCommandType",
-           "TEST_DRIVER_SET", "LogType", "ParserType", "CKit", "ComType",
-           "DeviceLabelType", "DeviceLiteKernel", "GTestConst", "ManagerType",
-           "ModeType", "ConfigConst"]
+           "TEST_DRIVER_SET", "LogType", "CKit",
+           "DeviceLabelType", "GTestConst", "ManagerType",
+           "ModeType", "ConfigConst", "FilePermission", "CommonParserType",
+           "DeviceConnectorType"]
 
 
 @dataclass
@@ -33,6 +34,7 @@ class DeviceOsType(object):
     """
     default = "default"
     lite = "lite"
+    aosp = "aosp"
 
 
 @dataclass
@@ -41,7 +43,7 @@ class ProductForm(object):
     ProductForm enumeration
     """
     phone = "phone"
-    car = "ivi"
+    car = "car"
     television = "tv"
     watch = "watch"
     tablet = 'tablet'
@@ -64,15 +66,6 @@ class TestType(object):
 
 
 @dataclass
-class ComType(object):
-    """
-    ComType enumeration
-    """
-    cmd_com = "cmd"
-    deploy_com = "deploy"
-
-
-@dataclass
 class DeviceLabelType(object):
     """
     DeviceLabelType enumeration
@@ -82,15 +75,6 @@ class DeviceLabelType(object):
     watch_gt = "watchGT"
     phone = "phone"
     watch = "watch"
-
-
-@dataclass
-class DeviceLiteKernel(object):
-    """
-    Lite device os enumeration
-    """
-    linux_kernel = "linux"
-    lite_kernel = "lite"
 
 
 TEST_TYPE_DICT = {
@@ -124,6 +108,8 @@ class DeviceTestType(object):
     DeviceTestType enumeration
     """
     cpp_test = "CppTest"
+    dex_test = "DexTest"
+    dex_junit_test = "DexJUnitTest"
     hap_test = "HapTest"
     junit_test = "JUnitTest"
     jsunit_test = "JSUnitTest"
@@ -133,6 +119,10 @@ class DeviceTestType(object):
     lite_cpp_test = "LiteUnitTest"
     open_source_test = "OpenSourceTest"
     build_only_test = "BuildOnlyTestLite"
+    ltp_posix_test = "LtpPosixTest"
+    oh_kernel_test = "OHKernelTest"
+    oh_jsunit_test = "OHJSUnitTest"
+    hm_os_jsunit_test = "HMOSJSUnitTest"
 
 
 @dataclass
@@ -150,16 +140,23 @@ class HostDrivenTestType(object):
     HostDrivenType enumeration
     """
     device_test = "DeviceTest"
+    windows_test = "WindowsTest"
 
 
 TEST_DRIVER_SET = {
     DeviceTestType.cpp_test,
+    DeviceTestType.dex_test,
     DeviceTestType.hap_test,
     DeviceTestType.junit_test,
+    DeviceTestType.dex_junit_test,
     DeviceTestType.jsunit_test,
+    DeviceTestType.jsunit_test_lite,
     DeviceTestType.cpp_test_lite,
     DeviceTestType.ctest_lite,
     DeviceTestType.lite_cpp_test,
+    DeviceTestType.ltp_posix_test,
+    DeviceTestType.oh_kernel_test,
+    DeviceTestType.oh_jsunit_test,
     HostDrivenTestType.device_test
 }
 
@@ -186,22 +183,25 @@ class ListenerType:
     upload = "Upload"
     collect = "Collect"
     collect_lite = "CollectLite"
+    collect_pass = "CollectPass"
 
 
 @dataclass
-class ParserType:
-    ctest_lite = "CTestLite"
-    cpp_test_lite = "CppTestLite"
-    cpp_test_list_lite = "CppTestListLite"
-    open_source_test = "OpenSourceTest"
-    build_only_test = "BuildOnlyTestLite"
-    jsuit_test_lite = "JSUnitTestLite"
+class CommonParserType:
+    jsunit = "JSUnit"
+    cpptest = "CppTest"
+    cpptest_list = "CppTestList"
+    junit = "JUnit"
+    oh_kernel_test = "OHKernel"
+    oh_jsunit = "OHJSUnit"
+    oh_jsunit_list = "OHJSUnitList"
 
 
 @dataclass
 class ManagerType:
     device = "device"
     lite_device = "device_lite"
+    aosp_device = "device_aosp"
 
 
 @dataclass
@@ -215,22 +215,7 @@ class ToolCommandType(object):
 
 @dataclass
 class CKit:
-    push = "PushKit"
-    liteinstall = "LiteAppInstallKit"
-    command = "CommandKit"
-    config = "ConfigKit"
-    wifi = "WIFIKit"
-    propertycheck = 'PropertyCheckKit'
-    sts = 'STSKit'
-    shell = "ShellKit"
-    deploy = 'DeployKit'
-    mount = 'MountKit'
-    liteuikit = 'LiteUiKit'
-    rootfs = "RootFsKit"
     query = "QueryKit"
-    liteshell = "LiteShellKit"
-    app_install = "AppInstallKit"
-    deploytool = "DeployToolKit"
     component = "ComponentKit"
 
 
@@ -289,8 +274,17 @@ class ConfigConst(object):
     component_base_kit = "component_base_kit"
     support_component = "support_component"
 
+    # Device log
+    device_log = "device_log"
+
 
 class FilePermission(object):
     mode_777 = 0o777
     mode_755 = 0o755
     mode_644 = 0o644
+
+
+@dataclass
+class DeviceConnectorType:
+    hdc = "usb-hdc"
+    adb = "usb-adb"

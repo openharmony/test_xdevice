@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -79,7 +79,6 @@ class JsonParser:
             raise ParamError("json file error: %s %s" % (
                 path_or_content, error), error_no="00111")
         self._check_config(json_content)
-
         # set self.config
         self.config = Config()
         self.config.description = json_content.get("description", "")

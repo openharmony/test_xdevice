@@ -33,6 +33,7 @@ python -c "import sys; exit(1) if sys.version_info.major < 3 or sys.version_info
 python -c "import pip"
 @if errorlevel 1 (
     @echo "Please install pip first!"
+    pause
     goto:eof
 )
 
@@ -40,6 +41,10 @@ if not exist %TOOLS% (
     @echo "no %TOOLS% directory exist"
 	goto:eof
 )
+
+python -m pip uninstall -y xdevice
+python -m pip uninstall -y xdevice-extension
+python -m pip uninstall -y xdevice-ohos
 
 for %%a in (%TOOLS%/*.egg) do (
     python -m pip install --user %TOOLS%/%%a

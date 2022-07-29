@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -27,6 +27,7 @@ from _core.logger import platform_logger
 from _core.report.encrypt import check_pub_key_exist
 from _core.report.encrypt import do_rsa_encrypt
 from _core.exception import ParamError
+from _core.constants import FilePermission
 
 LOG = platform_logger("ReporterHelper")
 
@@ -263,7 +264,7 @@ class DataHelper:
                 flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_BINARY
             else:
                 flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-            file_name_open = os.open(file_name, flags, 0o755)
+            file_name_open = os.open(file_name, flags, FilePermission.mode_755)
             with os.fdopen(file_name_open, "wb") as file_handler:
                 file_handler.write(cipher_text)
                 file_handler.flush()
@@ -271,7 +272,7 @@ class DataHelper:
             tree = ElementTree.ElementTree(element)
             tree.write(file_name, encoding="UTF-8", xml_declaration=True,
                        short_empty_elements=True)
-        LOG.info("generate data report: %s", file_name)
+        LOG.info("Generate data report: %s", file_name)
 
     @staticmethod
     def to_string(element):
@@ -473,7 +474,7 @@ class VisionHelper:
             if product_info:
                 exec_info.product_info = literal_eval(str(product_info))
         except SyntaxError as error:
-            LOG.error("summary report error: %s", error.args)
+            LOG.error("Summary report error: %s", error.args)
         return exec_info
 
     @classmethod
@@ -549,10 +550,10 @@ class VisionHelper:
                     render_target=ReportConstant.summary_vision_report):
         exec_info, summary, suites = parsed_data
         if not os.path.exists(self.template_name):
-            LOG.error("template file not exists")
+            LOG.error("Template file not exists")
             return ""
-        with open(self.template_name) as file_temp:
-            file_context = file_temp.read()
+
+        file_context = open(self.template_name).read()
         file_context = self._render_key("", ReportConstant.title_name,
                                         title_name, file_context)
         file_context = self._render_exec_info(file_context, exec_info)
@@ -564,7 +565,7 @@ class VisionHelper:
         elif render_target == ReportConstant.failures_vision_report:
             file_context = self._render_failure_cases(file_context, suites)
         else:
-            LOG.error("unsupported vision report type: %s", render_target)
+            LOG.error("Unsupported vision report type: %s", render_target)
         return file_context
 
     @classmethod
@@ -583,7 +584,7 @@ class VisionHelper:
         return file_context
 
     def _render_product_info(self, exec_info, file_context, prefix):
-        """construct product info context and render it to file context
+        """Construct product info context and render it to file context
 
         rendered product info sample:
             <tr>
@@ -604,8 +605,8 @@ class VisionHelper:
         row_start = True
         try:
             keys = list(exec_info.product_info.keys())
-        except AttributeError:
-            LOG.error("product info error %s", exec_info.product_info)
+        except AttributeError as _:
+            LOG.error("Product info error %s", exec_info.product_info)
             keys = []
 
         render_value = ""
@@ -668,7 +669,7 @@ class VisionHelper:
 
     def _render_data_object(self, file_context, data_object, prefix,
                             default=None):
-        """construct data object context and render it to file context"""
+        """Construct data object context and render it to file context"""
         if default is None:
             default = self.PLACE_HOLDER
         update_context = file_context
@@ -684,7 +685,7 @@ class VisionHelper:
         return update_context
 
     def _render_suites(self, file_context, suites):
-        """construct suites context and render it to file context
+        """Construct suites context and render it to file context
         suite record sample:
             <table class="suites">
             <tr>
@@ -778,7 +779,7 @@ class VisionHelper:
         return "<td class='%s'>%s</td>\n  " % (td_style_class, str(text))
 
     def _render_cases(self, file_context, suites):
-        """construct cases context and render it to file context
+        """Construct cases context and render it to file context
         case table sample:
             <table class="test-suite">
             <tr>
@@ -877,7 +878,7 @@ class VisionHelper:
         return case_title
 
     def _render_failure_cases(self, file_context, suites):
-        """construct failure cases context and render it to file context
+        """Construct failure cases context and render it to file context
         failure case table sample:
             <table class="failure-test">
             <tr>
@@ -1004,7 +1005,8 @@ class VisionHelper:
             flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_BINARY
         else:
             flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        vision_file_open = os.open(summary_vision_path, flags, 0o755)
+        vision_file_open = os.open(summary_vision_path, flags,
+                                   FilePermission.mode_755)
         vision_file = os.fdopen(vision_file_open, "wb")
         if check_pub_key_exist():
             try:
@@ -1017,4 +1019,4 @@ class VisionHelper:
             vision_file.write(bytes(report_context, "utf-8", "ignore"))
         vision_file.flush()
         vision_file.close()
-        LOG.info("generate vision report: %s", summary_vision_path)
+        LOG.info("Generate vision report: %s", summary_vision_path)

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -47,7 +47,7 @@ class SuiteReporter:
 
     def __init__(self, results, report_name, report_path=None, **kwargs):
         """
-        create suite report
+        Create suite report
         :param results: [(suite_result, [case_results]),
                         (suite_result, [case_results]), ...]
         :param report_name: suite report name
@@ -68,7 +68,7 @@ class SuiteReporter:
     def create_empty_report(self):
         # create empty data report only for single suite
         if len(self.results) != 1:
-            LOG.error("can only create one empty data report once")
+            LOG.error("Can only create one empty data report once")
             return
         suite_result, _ = self.results[0]
 
@@ -202,7 +202,7 @@ class SuiteReporter:
             child = test_case_elements[-1]
             child.tail = self.data_helper.LINE_BREAK_INDENT
         else:
-            LOG.debug("no case executed")
+            LOG.debug("No case executed")
         test_suite_element.extend(test_case_elements)
 
         # set test suite attributes
@@ -273,25 +273,25 @@ class SuiteReporter:
     @classmethod
     def clear_report_result(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("clear_report_result")
+            LOG.debug("Clear report result")
             cls.suite_report_result.clear()
 
     @classmethod
     def clear_failed_case_list(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("clear_failed_case_list")
+            LOG.debug("Clear failed case list")
             cls.failed_case_list.clear()
 
     @classmethod
     def append_report_result(cls, report_result):
         with SUITE_REPORTER_LOCK:
             if not isinstance(report_result, tuple) or len(report_result) != 2:
-                LOG.error("report result should be a tuple with length 2")
+                LOG.error("Report result should be a tuple with length 2")
                 return
             data_path = report_result[0]
             for index, exist_result in enumerate(cls.suite_report_result):
                 if exist_result[0] == data_path:
-                    LOG.debug("data report %s generate again", data_path)
+                    LOG.debug("Data report %s generate again", data_path)
                     cls.suite_report_result[index] = report_result
                     return
             cls.suite_report_result.append(report_result)
@@ -311,36 +311,36 @@ class SuiteReporter:
         case_name = element.get(ReportConstant.name, "")
         try:
             from agent.decc import Handler
-            LOG.info("upload case result to decc")
+            LOG.info("Upload case result to decc")
             Handler.upload_case_result(case_name, result, error_msg)
         except ModuleNotFoundError as error:
             from xdevice import Scheduler
             if Scheduler.mode == ModeType.decc:
-                LOG.error("module not found %s", error.args)
+                LOG.error("Module not found %s", error.args)
 
     @classmethod
     def get_report_result(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("get_report_result, length is {}".
+            LOG.debug("Get report result, length is {}".
                       format(len(cls.suite_report_result)))
             return SuiteReporter.suite_report_result
 
     @classmethod
     def set_suite_list(cls, suite_list):
-        LOG.debug("set_suite_list, length is {}".format(len(suite_list)))
+        LOG.debug("Set suite list, length is {}".format(len(suite_list)))
         cls.suite_list = suite_list
 
     @classmethod
     def get_suite_list(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("get_suite_list, length is {}".
+            LOG.debug("Get suite list, length is {}".
                       format(len(cls.suite_list)))
             return SuiteReporter.suite_list
 
     @classmethod
     def get_failed_case_list(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("get_failed_case_list, length is {}".
+            LOG.debug("Get failed case list, length is {}".
                       format(len(cls.failed_case_list)))
             return SuiteReporter.failed_case_list
 
@@ -348,7 +348,7 @@ class SuiteReporter:
     def append_history_result(cls, suite_reports):
         from _core.utils import get_filename_extension
         with SUITE_REPORTER_LOCK:
-            LOG.debug("append_history_result,suite_reports length is {}".
+            LOG.debug("Append history result,suite reports length is {}".
                       format(len(suite_reports)))
             for report_path, report_result in suite_reports:
                 module_name = get_filename_extension(report_path)[0]
@@ -358,13 +358,13 @@ class SuiteReporter:
     @classmethod
     def clear_history_result(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("clear_history_result")
+            LOG.debug("Clear history result")
             cls.history_report_result.clear()
 
     @classmethod
     def get_history_result_by_module(cls, name):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("get_history_result_by_module,module_name:{}".
+            LOG.debug("Get history result by module,module_name:{}".
                       format(name))
             for module_name, report_path, report_result in \
                     cls.history_report_result:
@@ -375,6 +375,6 @@ class SuiteReporter:
     @classmethod
     def get_history_result_list(cls):
         with SUITE_REPORTER_LOCK:
-            LOG.debug("get_history_result_list,length is {}".
+            LOG.debug("Get history result list,length is {}".
                       format(len(cls.history_report_result)))
             return cls.history_report_result

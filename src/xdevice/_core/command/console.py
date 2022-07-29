@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,6 +22,7 @@ import platform
 import signal
 import sys
 import threading
+import copy
 
 from _core.config.config_manager import UserConfigManager
 from _core.constants import SchedulerType
@@ -47,7 +48,10 @@ try:
     if platform.system() != 'Windows':
         import readline
 except (ModuleNotFoundError, ImportError):
-    LOG.warning("readline module is not exist.")
+    LOG.warning("Readline module is not exist.")
+
+MAX_VISIBLE_LENGTH = 49
+MAX_RESERVED_LENGTH = 46
 
 
 class Console(object):
@@ -74,7 +78,7 @@ class Console(object):
         del signalnum, frame
         if not Scheduler.is_execute:
             return
-        LOG.info("get terminate input")
+        LOG.info("Get terminate input")
         terminate_thread = threading.Thread(
             target=Scheduler.terminate_cmd_exec)
         terminate_thread.setDaemon(True)
@@ -84,7 +88,7 @@ class Console(object):
         """
         Main xDevice console providing user with the interface to interact
         """
-        if sys.version_info.major < 3 or sys.version_info.minor < 7:
+        if sys.version < '3.7':
             LOG.error("Please use python 3.7 or higher version to "
                       "start project")
             sys.exit(0)
@@ -112,18 +116,18 @@ class Console(object):
 
                 self.command_parser(usr_input)
 
-            except SystemExit:
+            except SystemExit as _:
                 LOG.info("Program exit normally!")
                 break
-            except ExecuteTerminate:
-                LOG.info("execution terminated")
+            except ExecuteTerminate as _:
+                LOG.info("Execution terminated")
             except (IOError, EOFError, KeyboardInterrupt) as error:
                 LOG.exception("Input Error: {}".format(error),
                               exc_info=False)
 
     def argument_parser(self, para_list):
         """
-        argument parser
+        Argument parser
         """
         options = None
         unparsed = []
@@ -274,7 +278,7 @@ class Console(object):
                                 help="Specify retry command"
                                 )
             parser.add_argument("--session",
-                                action="store",
+                                action=SplicingAction,
                                 dest=ConfigConst.session,
                                 help="retry task by session id")
             parser.add_argument("--dryrun",
@@ -297,6 +301,9 @@ class Console(object):
                                 dest=ConfigConst.repeat,
                                 help="number of times that a task is executed"
                                      " repeatedly")
+            parser.add_argument("-le", "--local_execution_log_path",
+                                dest="local_execution_log_path",
+                                help="- The local execution log path.")
             parser.add_argument("-s", "--subsystem",
                                 dest="subsystems",
                                 action="store",
@@ -310,13 +317,13 @@ class Console(object):
             self._params_pre_processing(para_list)
             (options, unparsed) = parser.parse_known_args(para_list)
             if unparsed:
-                LOG.warning("unparsed input: %s", " ".join(unparsed))
+                LOG.warning("Unparsed input: %s", " ".join(unparsed))
             self._params_post_processing(options)
 
-        except SystemExit:
+        except SystemExit as _:
             valid_param = False
             parser.print_help()
-            LOG.warning("Parameter parsing systemexit exception.")
+            LOG.warning("Parameter parsing system exit exception.")
         return options, unparsed, valid_param, parser
 
     @classmethod
@@ -346,14 +353,25 @@ class Console(object):
                     ConfigConst.pass_through: options.testargs})
         if not options.resource_path:
             resource_path = UserConfigManager(
-                config_file=options.config, env=options.test_environment). \
+                config_file=options.config, env=options.test_environment).\
                 get_resource_path()
             setattr(options, ConfigConst.resource_path, resource_path)
         if not options.testcases_path:
             testcases_path = UserConfigManager(
-                config_file=options.config, env=options.test_environment). \
+                config_file=options.config, env=options.test_environment).\
                 get_testcases_dir()
             setattr(options, ConfigConst.testcases_path, testcases_path)
+        if options.testcases_path:
+            if Scheduler.task_type in ["ets", "hits"]:
+                testcases_path = "".join((options.testcases_path,
+                                          "/special/android-ets/testcases"))
+                setattr(options, "testcases_path", testcases_path)
+        device_log = UserConfigManager(
+            config_file=options.config, env=options.test_environment). \
+            get_device_log_status()
+        if device_log is None or (device_log != "ON" and device_log != "OFF"):
+            device_log = "OFF"
+        setattr(options, ConfigConst.device_log, device_log)
         if options.subsystems:
             subsystem_list = str(options.subsystems).split(";")
             setattr(options, ConfigConst.subsystems, subsystem_list)
@@ -369,11 +387,11 @@ class Console(object):
             (options, _, valid_param, parser) = self.argument_parser(
                 para_list)
             if options is None or not valid_param:
-                LOG.warning("options is None.")
+                LOG.warning("Options is None.")
                 return None
             if options.action == ToolCommandType.toolcmd_key_run and \
                     options.retry:
-                options = self._get_retry_options(options)
+                options = self._get_retry_options(options, parser)
                 if options.dry_run:
                     history_report_path = getattr(options,
                                                   "history_report_path", "")
@@ -386,7 +404,7 @@ class Console(object):
 
             command = options.action
             if command == "":
-                LOG.info("command is empty.")
+                LOG.info("Command is empty.")
                 return
 
             self._process_command(command, options, para_list, parser)
@@ -414,14 +432,14 @@ class Console(object):
         elif command.startswith(ToolCommandType.toolcmd_key_list):
             self._process_command_list(command, para_list)
         else:
-            LOG.error("unsupported command action", error_no="00100",
+            LOG.error("Unsupported command action", error_no="00100",
                       action=command)
 
-    def _get_retry_options(self, options):
+    def _get_retry_options(self, options, parser):
+        input_options = copy.deepcopy(options)
         # get history command, history report path
         history_command, history_report_path = self._parse_retry_option(
             options)
-        input_report_path = options.report_path
         LOG.info("History command: %s", history_command)
         if not os.path.exists(history_report_path) and \
                 Scheduler.mode != ModeType.decc:
@@ -436,41 +454,21 @@ class Console(object):
             split_list = list(history_command.split())
             if "--repeat" in split_list:
                 pos = split_list.index("--repeat")
-                split_list = split_list[:pos] + split_list[pos + 2:]
+                split_list = split_list[:pos] + split_list[pos+2:]
                 history_command = " ".join(split_list)
 
         (options, _, _, _) = self.argument_parser(history_command.split())
         options.dry_run = is_dry_run
         setattr(options, "history_report_path", history_report_path)
-
-        # modify history_command -rp param
-        history_command = self._parse_rp_option(
-            history_command, input_report_path, options)
+        # modify history_command -rp param and -sn param
+        for option_tuple in self._get_to_be_replaced_option(parser):
+            history_command = self._replace_history_option(
+                history_command, (input_options, options), option_tuple)
 
         # add history command to Scheduler.command_queue
         LOG.info("Retry command: %s", history_command)
         Scheduler.command_queue[-1] = history_command
         return options
-
-    @classmethod
-    def _parse_rp_option(cls, history_command, input_report_path,
-                         options):
-        if options.report_path:
-            if input_report_path:
-                history_command = history_command.replace(
-                    options.report_path, input_report_path)
-                setattr(options, "report_path", input_report_path)
-            else:
-                history_command = history_command.replace(
-                    options.report_path, "").replace("-rp", "").replace(
-                    "--reportpath", "")
-                setattr(options, "report_path", "")
-        else:
-            if input_report_path:
-                history_command = "{}{}".format(history_command,
-                                                " -rp %s" % input_report_path)
-                setattr(options, "report_path", input_report_path)
-        return history_command.strip()
 
     @classmethod
     def _process_command_help(cls, parser, para_list):
@@ -553,10 +551,10 @@ class Console(object):
             "TaskId", "Command", "ReportPath"))
         for command_info in Scheduler.command_queue[:-1]:
             command, report_path = command_info[1], command_info[2]
-            if len(command) > 49:
-                command = "%s..." % command[:46]
-            if len(report_path) > 49:
-                report_path = "%s..." % report_path[:46]
+            if len(command) > MAX_VISIBLE_LENGTH:
+                command = "%s..." % command[:MAX_RESERVED_LENGTH]
+            if len(report_path) > MAX_VISIBLE_LENGTH:
+                report_path = "%s..." % report_path[:MAX_RESERVED_LENGTH]
             print("{0:<16}{1:<50}{2:<50}".format(
                 command_info[0], command, report_path))
 
@@ -688,6 +686,47 @@ class Console(object):
         else:
             print("'%s' command no help information." % command)
 
+    @classmethod
+    def _replace_history_option(cls, history_command, options_tuple,
+                                target_option_tuple):
+        input_options, history_options = options_tuple
+        option_name, short_option_str, full_option_str = target_option_tuple
+        history_value = getattr(history_options, option_name, "")
+        input_value = getattr(input_options, option_name, "")
+        if history_value:
+            if input_value:
+                history_command = history_command.replace(history_value,
+                                                          input_value)
+                setattr(history_options, option_name, input_value)
+            else:
+                history_command = str(history_command).replace(
+                    history_value, "").replace(full_option_str, "").\
+                    replace(short_option_str, "")
+        else:
+            if input_value:
+                history_command = "{}{}".format(
+                    history_command, " %s %s" % (short_option_str,
+                                                 input_value))
+                setattr(history_options, option_name, input_value)
+
+        return history_command.strip()
+
+    @classmethod
+    def _get_to_be_replaced_option(cls, parser):
+        name_list = ["report_path", "device_sn"]
+        option_str_list = list()
+        action_list = getattr(parser, "_actions", [])
+        if action_list:
+            for action in action_list:
+                if action.dest not in name_list:
+                    continue
+                option_str_list.append((action.dest, action.option_strings[0],
+                                        action.option_strings[1]))
+        else:
+            option_str_list = [("report_path", "-rp", "--reportpath"),
+                               ("device_sn", "-sn", "--device_sn")]
+        return option_str_list
+
 
 RUN_INFORMATION = """run:
     This command is used to execute the selected testcases.
@@ -763,7 +802,7 @@ TEST_ENVIRONMENT [TEST_ENVIRONMENT ...]
 Examples:
     run -l <module name>;<module name>
     run -tf test/resource/<test file name>.txt 
-
+    
     run –l <module name> -sn <device serial number>;<device serial number>
     run –l <module name> -respath <path of resource>
     run –l <module name> -ta size:large
@@ -774,22 +813,22 @@ Examples:
     run –l <module name> –t ALL
     run –l <module name> –td CppTest
     run –l <module name> -tcpath resource/testcases
-
+    
     run ssts
     run ssts –tc <python script name>;<python script name>
     run ssts -sn <device serial number>;<device serial number>
     run ssts -respath <path of resource>
     ... ...   
-
+    
     run acts
     run acts –tc <python script name>;<python script name>
     run acts -sn <device serial number>;<device serial number>
     run acts -respath <path of resource>
     ... ...
-
+    
     run hits
     ... ...
-
+    
     run --retry
     run --retry --session <report folder name>
     run --retry --dryrun
@@ -801,7 +840,7 @@ usage:
     list 
     list history
     list <id>
-
+       
 Introduction:
     list:         display device list 
     list history: display history record of a serial of tasks
@@ -813,9 +852,10 @@ Examples:
     list 6e****90
 """
 
+
 GUIDE_INFORMATION = """help:
     use help to get  information.
-
+    
 usage:
     run:  Display a list of supported run command.
     list: Display a list of supported device and task record.

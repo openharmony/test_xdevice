@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -29,7 +29,7 @@ LOG = platform_logger("ReportMain")
 
 
 def main_report():
-    if sys.version_info.major < 3 or sys.version_info.minor < 7:
+    if sys.version < '3.7':
         LOG.error("Please use python 3.7 or higher version to start "
                   "project")
         return
@@ -45,10 +45,10 @@ def main_report():
         report_path = os.path.abspath(os.path.join(exec_dir, report_path))
 
     if not os.path.exists(report_path):
-        LOG.error("report path %s not exists", report_path)
+        LOG.error("Report path %s not exists", report_path)
         return
 
-    LOG.info("report path: %s", report_path)
+    LOG.info("Report path: %s", report_path)
     task_info = ExecInfo()
     task_info.platform = "None"
     task_info.test_type = "Test"
