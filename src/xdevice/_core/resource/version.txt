@@ -1,0 +1,357 @@
+xDevice-v2.8.0.1074
+1.fix bug
+
+xDevice-v2.7.0.1072
+1.fix bug
+
+xDevice-v2.6.0.1064
+1.修复gitee上XTS测试套执行异常的bug
+
+xDevice-v2.5.0.1062
+1.优化调整xdevice目录
+
+xDevice-v2.3.0.3045
+1.修改判断是否是OpenHarmony的系统的方式
+2.修改DeviceTest Driver的hilog日志抓取方式，改用hilog任务落盘机制
+
+xDevice-v2.2.0.3044
+1.增加适配OpenHarmony下fport获取端口
+
+xDeviceTest-v2.1.0.3041
+1.融合版本基础版本，增加适配OpenHarmony
+2.DeviceTest driver增加抓hilog日志
+3.user.config文件中增加配置日志开关
+
+xDeviceTest-v2.0.2.1211
+1.handle the issue that garbled words occurs when execute command by hdc_std
+2.extended the timeout of socket to read and write
+3.support dynamically change elements to specify a driver
+4.support specify the sn of device in retry command
+5.support white space characters in session parameter
+6.change the command in the testsuite runner of DexJunitDriver
+7.change the execution process of JSUnitTestDriver
+8.handle the uninstall error when testsuite add the package name repeatedly
+9.support the exemption list in JunitTestDriver,DexJunitTestDriver,CppTestDriver
+10.support the test of pyd file that contains no json file by DeviceTest in factory mode
+
+xDeviceTest-v2.0.1.1131
+1.support new protocol of hdc
+2.support third-party device's product label
+3.support new package name in JUnitTestDriver
+4.add agent proxy to communicate with factory server
+5.restrict the execution of the test case when the number of device mounting
+  failures reaches three
+6.configure the IP address after the device is restarted
+
+xDeviceTest-v2.0.1.1041
+1.support getting default devices when device's label value that in suite json is empty
+2.change the commands and logic in TestBundleKit
+3.if the use case execution detects the Execute: I/O error message, ping nfs
+4.support DeployToolKit driver
+5.support check bin exist before run
+6.support umount fail,try again
+7.run the next test case when the message "Test Stop, not mount properly" is displayed.
+
+xDeviceTest-v1.1.0.1131
+1.handle the issue that wifi kit can't find wifi app in the resource path
+  which was assigned by user
+2.the mounting failure is rectified, and the retry mechanism is added.
+
+xDeviceTest-v1.1.0.1121
+1.handle the issue that testcase's status what was marked as not run shows in report.
+2.handle the issue that error of get local ip occurs when local environment's network
+  settings is incorrect.
+3.fix BuildOnlyTestLite filepath
+
+xDeviceTest-v1.1.0.1111
+1.fix the issue that due to print error, task is interrupted when device reboot
+2.remove versionId check in the version verification about lightweight device
+
+xDeviceTest-v1.1.0.1101
+1.fix the issue that the number can't be show when collect tests' count
+2.fix report statistics ignore cases
+
+xDeviceTest-v1.1.0.1091
+1.handle the issue that not json file  exists when the task is executing in factory
+2.fix the issue that runner can't be found in AndroidJunitTest
+3.parse all logfile in the log_path directory when the driver type is BuildOnlyTestLite
+4.handle the issue that empty test occurs in JunitTest when run all test cases
+  in specific task mode
+
+xDeviceTest-v1.1.0.1051
+1.fix the issue that during system startup, device monitor keeps waiting since
+  one device closed response after it was pulled out
+2.replace all what relate to ApkInstallKit in the testcases directory
+3.add the new format of log level settings
+4.modify "LiteApkInstallKit" to "LiteAppInstallKit" and
+ "cleanup-apks" to "cleanup-apps"
+5.change baund_rate in the user_config.xml file to baud_rate.
+
+xDeviceTest-v1.1.0.1041
+1.delete the hap files that were pushed to device
+2.add hilog command to catch log in the device whose version is Harmony branch
+3.fix the issue that device's recover state is invalid when reconnect
+4.fix failed to copy the bin file to the NFS directory
+
+xDeviceTest-v1.1.0.1032
+1.add the spt check in the version verification about lightweight device
+2.fix the issue that the hap file cannot install when specific error occurs
+3.fix run ssts device offline execution takes a long time
+4.fix the issue that local device can't be find if use local ip
+
+xDeviceTest-v1.1.0.1021
+1.add the repeat parameter
+2.supports the Linux kernel
+3.add pause to run.bat
+4.generate report zip file in factory mode
+
+xDeviceTest-v1.1.0.1011
+1.add AppInstallKit
+2.fix L0 multiple testsuites fail testcase parse issue
+
+xDeviceTest-v1.0.3.1131
+1.add more display of help
+2.reset junit parameters in AndroidJunitTestDriver and JunitTestDriver
+
+xDeviceTest-v1.0.3.1121:
+1.check device name in kit config
+2.process the blocked state when a case is executed in AndroidJunitTestDriver,
+  CppTestDriver,JUnitTestDriver,DexJunitDriver
+3.handle the ConnectionResetError what occurs in DexJunitDriver when it execute
+  shell command
+4.adapt the command about check package in JUnitTestDriver
+
+xDeviceTest-v1.0.3.1111:
+1.add the execute permission for the aapt tool in linux
+2.upload log path to factory when module result is unavailable
+3.support to run phone script through DeviceTest driver
+
+xDeviceTest-v1.0.3.1104:
+1.add include-tests in JunitTest and AndroidJunitTest
+2.upload case result with log path
+
+xDeviceTest-v1.0.3.1092:
+1.add parameter -c(--config) to specify config file path
+2.support abort-on-push-failure item in PushKit
+3.modify supported rsa key format to pkcs8
+4.fix adb reboot error issue under connect situation
+
+xDeviceTest-v1.0.3.1082:
+1.support encryption and decryption of framework logs
+2.support public key string
+3.add uninstall .hap in JSUnitTestLite driver
+4.add device lite recover function
+5.modify device lite label watchGT
+6.support custom username/password/certification configuration of wifi kit.
+
+xDeviceTest-v1.0.3.1071:
+1.add testBundleKit
+2.change DeviceError and retry pass log output
+3.support checking hdc in process environment.
+4.adapt bm and aa execution path for JSUnitParserLite
+5.modify device recover for device disconnection
+6.handle the scene that module not need to retry
+
+xDeviceTest-v1.0.3.1061:
+1.implement retry function in decc mode.
+2.fix testsuit runtime is 0 in OpenSourceTest
+3.add check_device parameter for run action commond
+4.modify CppTestDriver to execute Android GTest testsuites.
+5.adapt for the xdevice-devicetest modification
+
+xDeviceTest-v1.0.3.1052:
+1.add usb-type attribute to Device class
+2.modify parameters display order, change --pass_through to --passthrough(-pt)
+3.delete Log Path in vision reports
+4.fix testsuit runtime is 0 in AndroidJUnitTest and JUnitTest and DexJUnit
+5.modify CppTestLiteDriver result message when the xml is empty
+
+xDeviceTest-v1.0.3.1041:
+1.fix the issue that the log level cannot be restored after being dynamically modified.
+2.support set device name in json config file
+3.config kit for the specific device through device_name field
+  (JUnitTest and AndroidJUnitTest supported by now)
+4.modify CppTestLiteDriver code when setting encryption
+5.add CTestLiteDriver suites end sign
+6.add reboot-per-module for run
+
+xDeviceTest-v1.0.3.1032:
+1.modify xml result format
+2.support run -l xxx -tc xxx for DeviceTestDriver
+3.modify device retry behaviour when execute dex driver
+4.remove hdc temporily.
+5.add check xml exist function for CppTestDriver
+6.allocate device in sn order
+7.modify user_config processing for phone
+
+xDeviceTest-v1.0.3.1022:
+1.add new state unusable for L0 device
+2.adapt retry function for L1 CppTest
+3.add hdc support for both Windows and Linux
+4.use [] to split log segment, add ErrorNo for error log
+5.add data reports into task_info.record file
+6.change failures_report.html table style to top alignment
+7.modify exclude-annotation and include-annotation parameter
+
+xDeviceTest-v1.0.2.1141:
+1.support -tc parameter to execute python script
+2.add the setting of log level in user config
+3.fix ignored case counting issue for JUnit and AndroidJUnit
+4.add JSUnitTestLite driver
+5.modify L1 execution log output real time
+
+xDeviceTest-v1.0.2.1132:
+1.add a dry run command for list retry cases
+2.add specific file to record the information about unsuccessful cases
+3.add LiteShellKit and reset function for DeviceLite
+4.delete support_device for user_config.xml
+5.change details report Test title to Testcase
+6.show -t(--testtype) value to vision report
+7.support DexJunitDriver
+8.add a session param for retry command to retry specific session task
+
+xDeviceTest-v1.0.2.1123:
+1.add test case error information for OpenSourceTest driver
+2.modify get test cases function by parsing XML for CppTest driver
+3.add run parameter for AndroidJUnitTest
+4.Socket buffer size was adjusted in order to reduce echo time.
+
+xDeviceTest-v1.0.2.1112:
+1.upload results of remaining modules to decc when the current task is terminated.
+2.upload results of device error modules to decc
+3.add QueryKit and get L1 device information
+4.add version for L1 and L0 device
+5.fix AndroidGTestDriver testcases counting issue.
+6.add IGNORE status code in AndroidJUnitTest and JUnitTest
+7.JunitParser's counting issue was fixed.
+
+xDeviceTest-v1.0.2.1101:
+1.change egg file to tar.gz file
+2.upload empty result report to decc when error occurs under decc mode
+3.adapt JUnit driver test case modification
+4.add BuildOnlyTestLite driver
+5.output error log when adb not exists
+6.fix rerun and xml-output params
+
+xDeviceTest-v1.0.2.1091:
+1.divide phone device related code and package it to xdevice-extension.egg
+2.support to execute phone related driver by installing xdevice-extension.egg
+3.move _core directory to xdevice directory
+4.fix lite device list not clear issue
+5.modify device_test driver to support execute and module name parameter
+6.add L1 and L0 execution log information
+
+xDeviceTest-v1.0.2.1081:
+1.keep command execution when aapt not exists
+2.adapt retry command under decc mode
+3.modify LogListener to display device and progress
+4.modify user_config.xml and test case xxx.json file to adapt new mount kit
+
+xDeviceTest-v1.0.2.1072:
+1.modify config file extension from .config to .json
+2.add RootFsKit for ipcamera
+3.support rsa encryption for Lite, JUnit, JSUnit and android drivers
+4.add compressed zip and hash file to report folder
+5.modify mount kit to support local device
+6.add exception when CppTestLit mount failed
+
+xDeviceTest-v1.0.2.1061:
+1.change CTest, CppTest for lite module to CTestLite and CppTestLite
+2.dynamically add product params to vision report for CTestLite and CppTestLite driver
+3.search task file in config folder
+4.fix char1(SOH) issue
+5.fix DeviceTest to support tcpath parameter
+6.add log information for remote lite test case execution
+
+xDeviceTest-v1.0.2.1051:
+1.change driver name, remove harmony and harmonylite prefix
+2.add ignored data to report
+3.add OpenSourceTest driver
+4.supports paths with spaces
+5.add CTest error message
+6.remove wrong config file during execution
+7.remove python test driver
+
+xDeviceTest-v1.0.2.1041:
+1.support terminating execution by inputting ctrl+c at terminal window
+2.add "Execution Time" and "Modules Done" to vision report, modify "Test Type" display content
+3.support ui test for lite device:watch
+4.plan_log record debug level log output
+5.modify retry test cases one by one for AndroidGTest, AndroidJUnitTest and JUnitTest
+
+xDeviceTest-v1.0.2.1031:
+1.add unavailable message to failures report
+2.add rerun by testFile for AndroidJUnitTest
+3.add hap installation package failed exception
+
+xDeviceTest-v1.0.2.1021:
+1.add device_hilog_xxx and modify device_log to device_android_log_xxx for JSUnitTest and JUnitTest
+2.add test case execution progress for AndroidGTest, AndroidJUnitTest and JUnitTest
+3.add uninstall hap for ApkInstallKit
+4.add dryrun, rerun and retry functions for CppTest
+5.run -l xxx can input config string (CppTest and CTest support config string input)
+6.generate summary.ini including execution information in report path
+7.modify JunitParser to solve the error report problem
+
+xDeviceTest-v1.0.0.171:
+1.add rerun function for AndroidJUnitTest
+2.add device_hilog_xxx and modify device_log to device_android_log_xxx for AndroidJUnitTest
+3.modify resource path and "resource" is not required
+4.change JUnitTest driver name to JUnitTest
+5.adapt the modification of xml report file generation path in JUnitTest
+6.support to display details in multiple lines at failures_report.html
+
+xDeviceTest-v1.0.0.162:
+1.add list history and list <plan id> command to show history plan info,
+  includes plan id, command, report path
+2.add --retry parameter to run command
+  (AndroidJunitTest, JUnitTest supports retry parameter by now).
+  command 'run --retry' retry previous command;
+  command 'run --retry <plan id>' retry specified plan id command;
+  -rp parameter is valid for retry command, like 'run --retry <plan id> -rp xxx'
+3.AndroidJunitTest and JUnitTest support to run specified classes and methods under the same module
+4.fix vision report test case result judgement issue
+5.modify wait available device information and time interval to check L0 and L1 available device
+6.raise exception if install apk failed, record log information if uninstall apk failed
+
+xDeviceTest-v1.0.0.161:
+1.support JUnitTest
+2.support JSUnitTest
+3.support xml-output option in config file and command line for JUnitTest and JSUnitTest
+4.add environment parameter processing for config file for L0 and L1
+5.fix xml 0x02, 0x0F, 0x10 char transfer issue
+6.fix mount same file failed issue
+7.fix L1 wait timeout to generate report issue
+8.add check and give prompt for wrong device config for L0 and L1
+9.modify L0 burn time from millisecond to ms
+10.add AndroidBackGroundTestDriver to test android test background execution
+
+xDeviceTest-v20.06.10:
+1. add run parameter tcpath to specify testcases path
+2. modify run parameter res to respath
+3. add execute_shell_command_background for USB disconnection
+4. generate failures report when failed test cases exist
+5. support module discovery in the testcases subfolders
+6. add startup.bat and startup.sh
+7. fix the device log is not recorded when the device reboots or reconnects
+8. fix android junit test time style transfer issue when the time exceeds 1000ms
+
+xDeviceTest-v20.06.03:
+1. support empty report for android test
+2. add test case execution time in CTest data report
+3. add version in CTest data report
+4. add device log in CTest and CPPTest
+5. support error report for CTest
+6. remove burn tool from test suit config file for CTest
+7. fix reboot command failed to get log error for CPPTest
+8. fix android reboot operation, wait for device recovery
+9. fix certain factory result upload issues
+
+xDeviceTest-v20.05.27:
+1. support upload factory pythontest task result
+2. support factory task terminate
+3. support run as python module
+4. support error report for android test
+5. add devicetest driver for lite
+6. fix execution direction error
+7. fix command kit

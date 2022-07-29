@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -25,13 +25,14 @@ from collections import namedtuple
 from _core.constants import DeviceTestType
 from _core.constants import ModeType
 from _core.constants import HostDrivenTestType
+from _core.constants import FilePermission
 from _core.constants import ConfigConst
 from _core.exception import ParamError
 from _core.logger import platform_logger
 from _core.utils import get_filename_extension
 from _core.utils import is_config_str
 from _core.utils import unique_id
-
+from adapter.xdevice_adapter.constants import AppConst
 
 __all__ = ["TestSetSource", "TestSource", "find_test_descriptors",
            "find_testdict_descriptors", "TestDictSource"]
@@ -40,12 +41,16 @@ TestSetSource = namedtuple('TestSetSource', 'set')
 TestSource = namedtuple('TestSource', 'source_file source_string config_file '
                                       'test_name test_type module_name')
 
-TEST_TYPE_DICT = {"HAP": DeviceTestType.hap_test,
+TEST_TYPE_DICT = {"DEX": DeviceTestType.dex_test,
+                  "HAP": DeviceTestType.hap_test,
+                  AppConst.app_name: DeviceTestType.hap_test,
                   "PYT": HostDrivenTestType.device_test,
                   "JST": DeviceTestType.jsunit_test,
                   "CXX": DeviceTestType.cpp_test,
                   "BIN": DeviceTestType.lite_cpp_test}
-EXT_TYPE_DICT = {".hap": DeviceTestType.hap_test,
+EXT_TYPE_DICT = {".dex": DeviceTestType.dex_test,
+                 ".hap": DeviceTestType.hap_test,
+                 AppConst.app_ext: DeviceTestType.hap_test,
                  ".py": HostDrivenTestType.device_test,
                  ".js": DeviceTestType.jsunit_test,
                  ".bin": DeviceTestType.lite_cpp_test,
@@ -60,13 +65,14 @@ LOG = platform_logger("TestSource")
 
 def find_test_descriptors(config):
     if not config.testfile and not config.testlist and not config.task and \
-            not config.testcase:
+            not config.testcase and not config.subsystems and \
+            not config.parts:
         return None
 
     # get test sources
     testcases_dirs = _get_testcases_dirs(config)
     test_sources = _get_test_sources(config, testcases_dirs)
-    LOG.debug("test sources: %s", test_sources)
+    LOG.debug("Test sources: %s", test_sources)
 
     # normalize test sources
     test_sources = _normalize_test_sources(testcases_dirs, test_sources,
@@ -100,7 +106,7 @@ def _get_testcases_dirs(config):
             Variables.top_dir):
         testcases_dirs.append(Variables.top_dir)
 
-    LOG.debug("testcases directories: %s", testcases_dirs)
+    LOG.debug("Testcases directories: %s", testcases_dirs)
     return testcases_dirs
 
 
@@ -165,20 +171,20 @@ def _get_test_sources(config, testcases_dirs):
     # get test sources from testcases_dirs
     if not config.testfile and not config.testlist and not config.testcase \
             and not config.subsystems and not config.parts and not \
-            getattr(config, ConfigConst.component_base_kit, "") and\
+            getattr(config, ConfigConst.component_base_kit, "") and \
             config.task:
         for testcases_dir in testcases_dirs:
             _append_module_test_source(testcases_dir, test_sources)
         return test_sources
 
-    # get test sources from config.testlist
+        # get test sources from config.testlist
     if getattr(config, ConfigConst.testlist, ""):
         for test_source in config.testlist.split(";"):
             if test_source.strip():
                 test_sources.append(test_source.strip())
         return test_sources
 
-    # get test sources from config.testfile
+        # get test sources from config.testfile
     if getattr(config, ConfigConst.testfile, ""):
         test_file = _get_test_file(config, testcases_dirs)
         flags = os.O_RDONLY
@@ -188,16 +194,15 @@ def _get_test_sources(config, testcases_dirs):
                 if line.strip():
                     test_sources.append(line.strip())
 
-    # get test sources from config.testcase
+        # get test sources from config.testcase
     if getattr(config, ConfigConst.testcase, ""):
         for test_source in config.testcase.split(";"):
             if test_source.strip():
                 test_sources.append(test_source.strip())
         return test_sources
 
-    # get test sources according *.moduleInfo file
-    if getattr(config, ConfigConst.subsystems, []) or getattr(
-            config, ConfigConst.parts, []) or \
+    if getattr(config, ConfigConst.subsystems, []) or \
+            getattr(config, ConfigConst.parts, []) or \
             getattr(config, ConfigConst.component_base_kit, ""):
         setattr(config, ConfigConst.component_mapper, dict())
         for testcases_dir in testcases_dirs:
@@ -328,7 +333,18 @@ def _make_test_descriptors_from_testsources(test_sources, config):
         config_file = _get_config_file(
             os.path.join(os.path.dirname(test_source), filename), ext, config)
         test_type = _get_test_type(config_file, test_driver, ext)
-
+        if not config_file:
+            if getattr(config, ConfigConst.testcase, "") and not \
+                    getattr(config, ConfigConst.testlist):
+                LOG.debug("Can't find the json file of config")
+                from xdevice import Scheduler
+                if Scheduler.device_labels:
+                    config_file, test_type = _generate_config_file(
+                        Scheduler.device_labels,
+                        os.path.join(os.path.dirname(test_source), filename),
+                        ext, test_type)
+                    setattr(Scheduler, "tmp_json", config_file)
+                    LOG.debug("Generate temp json success: %s" % config_file)
         desc = _create_descriptor(config_file, filename, test_source,
                                   test_type, config)
         if desc:
@@ -429,14 +445,14 @@ def _get_test_type(config_file, test_driver, ext):
 
     if config_file:
         if not os.path.exists(config_file):
-            LOG.error("config file '%s' not exists" % config_file,
+            LOG.error("Config file '%s' not exists" % config_file,
                       error_no="00110")
             return ""
         return _get_test_driver(config_file)
     if ext in [".py", ".js", ".dex", ".hap", ".bin"] \
             and ext in TestDictSource.exe_type.keys():
         test_type = TestDictSource.exe_type[ext]
-    elif ext in TestDictSource.exe_type.keys():
+    elif ext in [AppConst.app_ext] and ext in TestDictSource.exe_type.keys():
         test_type = DeviceTestType.hap_test
     else:
         test_type = DeviceTestType.cpp_test
@@ -450,6 +466,24 @@ def _parse_module_name(config_file, file_name):
         if "{" in file_name:
             return "report"
         return file_name
+
+
+def _generate_config_file(device_labels, filename, ext, test_type):
+    if test_type not in [HostDrivenTestType.device_test]:
+        test_type = HostDrivenTestType.device_test
+    top_dict = {"environment": [], "driver": {"type": test_type,
+                "py_file": "%s%s" % (filename, ext)}}
+    for label in device_labels:
+        device_json_list = top_dict.get("environment")
+        device_json_list.append({"type": "device", "label": label})
+
+    save_file = os.path.join(os.path.dirname(filename),
+                             "%s.json" % os.path.basename(filename))
+    save_file_open = \
+        os.open(save_file, os.O_WRONLY | os.O_CREAT, FilePermission.mode_755)
+    with os.fdopen(save_file_open, "w") as save_handler:
+        save_handler.write(json.dumps(top_dict, indent=4))
+    return save_file, test_type
 
 
 class TestDictSource:

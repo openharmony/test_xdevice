@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -87,7 +87,7 @@ class ResourceManager(object):
                         node = target
                         break
         except (SyntaxError, ValueError, AttributeError, TypeError) as error:
-            LOG.error("resource_test.xml parsing failed. %s", error.args)
+            LOG.error("Error: resource_test.xml parsing failed. %s", error.args)
         return node
 
     @staticmethod

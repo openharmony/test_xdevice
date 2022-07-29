@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -150,7 +150,7 @@ class TestDescription(object):
 @Plugin(type=Plugin.LISTENER, id=ListenerType.log)
 class LogListener(IListener):
     """
-    listener test status information to the console and log
+    Listener test status information to the console and log
     """
     test_num = 0
     device_sn = ""
@@ -163,7 +163,7 @@ class LogListener(IListener):
                       % (test_result.suite_name, test_result.test_num))
             self.test_num = test_result.test_num
         elif lifecycle == LifeCycle.TestCase:
-            LOG.debug("testStarted(%s#%s)" % (test_result.test_class,
+            LOG.debug("TestStarted(%s#%s)" % (test_result.test_class,
                                               test_result.test_name))
 
     def __ended__(self, lifecycle, test_result, **kwargs):
@@ -176,7 +176,7 @@ class LogListener(IListener):
             LOG.debug("End test suite [%s] and cost %sms."
                       % (test_result.suite_name, test_result.run_time))
         elif lifecycle == LifeCycle.TestCase:
-            LOG.debug("testEnded(%s#%s)" % (test_result.test_class,
+            LOG.debug("TestEnded(%s#%s)" % (test_result.test_class,
                                             test_result.test_name))
             ret = ResultCode(test_result.code).name
             if self.test_num:
@@ -211,7 +211,7 @@ class LogListener(IListener):
 @Plugin(type=Plugin.LISTENER, id=ListenerType.report)
 class ReportListener(IListener):
     """
-    listener test status information to the console
+    Listener test status information to the console
     """
 
     def __init__(self):
@@ -367,7 +367,7 @@ class UploadListener(IListener):
 @Plugin(type=Plugin.LISTENER, id=ListenerType.collect)
 class CollectingTestListener(IListener):
     """
-    listener test status information to the console
+    Listener test status information to the console
     """
 
     def __init__(self):
@@ -398,7 +398,7 @@ class CollectingTestListener(IListener):
 @Plugin(type=Plugin.LISTENER, id=ListenerType.collect_lite)
 class CollectingLiteGTestListener(IListener):
     """
-    listener test status information to the console
+    Listener test status information to the console
     """
 
     def __init__(self):

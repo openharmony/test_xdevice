@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -27,6 +27,7 @@ from _core.interface import IReporter
 from _core.plugin import Plugin
 from _core.constants import ModeType
 from _core.constants import TestType
+from _core.constants import FilePermission
 from _core.logger import platform_logger
 from _core.exception import ParamError
 from _core.utils import get_filename_extension
@@ -90,11 +91,11 @@ class ResultReporter(IReporter):
     def _check_params(self, report_path, **kwargs):
         task_info = kwargs.get("task_info", "")
         if not report_path:
-            LOG.error("report path is wrong", error_no="00440",
+            LOG.error("Report path is wrong", error_no="00440",
                       ReportPath=report_path)
             return False
         if not task_info or not isinstance(task_info, ExecInfo):
-            LOG.error("task info is wrong", error_no="00441",
+            LOG.error("Task info is wrong", error_no="00441",
                       TaskInfo=task_info)
             return False
 
@@ -133,11 +134,11 @@ class ResultReporter(IReporter):
             try:
                 from agent.decc import Handler
                 from xdevice import Scheduler
-                LOG.info("upload task summary result to decc")
+                LOG.info("Upload task summary result to decc")
                 Handler.upload_task_summary_results(
                     self.get_result_of_summary_report())
             except ModuleNotFoundError as error:
-                LOG.error("module not found %s", error.args)
+                LOG.error("Module not found %s", error.args)
 
     def _update_test_suites(self, test_suites_element):
         # initial attributes for test suites element
@@ -164,7 +165,7 @@ class ResultReporter(IReporter):
                         ReportConstant.empty_name:
                     child.set(ReportConstant.module_name, module_name)
                 self._check_tests_and_unavailable(child)
-                # covert "notrun" to "ignored" for the test case status
+                # covert the status of "notrun" to "ignored"
                 for element in child:
                     if element.get(ReportConstant.status, "") == \
                             ReportConstant.not_run:
@@ -182,14 +183,14 @@ class ResultReporter(IReporter):
             child = test_suite_elements[-1]
             child.tail = self.data_helper.LINE_BREAK
         else:
-            LOG.error("execute result not exists")
+            LOG.error("Execute result not exists")
             return False
 
         # set test suites element attributes and children
         modules_zero = [module_name for module_name, total in modules.items()
                         if total == 0]
         if modules_zero:
-            LOG.info("the total tests of %s module is 0", ",".join(
+            LOG.info("The total tests of %s module is 0", ",".join(
                 modules_zero))
         test_suites_attributes[ReportConstant.run_modules] = \
             len(modules) - len(modules_zero)
@@ -271,12 +272,12 @@ class ResultReporter(IReporter):
     def _generate_vision_reports(self):
         if not self._check_mode(ModeType.decc) and not \
                 self.summary_data_report_exist:
-            LOG.error("summary data report not exists")
+            LOG.error("Summary data report not exists")
             return
 
         if check_pub_key_exist() or self._check_mode(ModeType.decc):
             if not self.summary_report_result_exists():
-                LOG.error("summary data report not exists")
+                LOG.error("Summary data report not exists")
                 return
             self.summary_data_str = \
                 self.get_result_of_summary_report()
@@ -353,7 +354,7 @@ class ResultReporter(IReporter):
             from xdevice import SuiteReporter
             suite_reports = SuiteReporter.get_report_result()
             if self._check_mode(ModeType.decc):
-                LOG.debug("handle history result, data_reports length:{}".
+                LOG.debug("Handle history result, data reports length:{}".
                           format(len(suite_reports)))
                 SuiteReporter.clear_history_result()
                 SuiteReporter.append_history_result(suite_reports)
@@ -426,7 +427,8 @@ class ResultReporter(IReporter):
             flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_BINARY
         else:
             flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        summary_filepath_open = os.open(summary_filepath, flags, 0o755)
+        summary_filepath_open = os.open(summary_filepath, flags,
+                                        FilePermission.mode_755)
 
         with os.fdopen(summary_filepath_open, "wb") as file_handler:
             if check_pub_key_exist():
@@ -439,7 +441,7 @@ class ResultReporter(IReporter):
             else:
                 file_handler.write(bytes(summary_ini_content, 'utf-8'))
             file_handler.flush()
-            LOG.info("generate summary ini: %s", summary_filepath)
+            LOG.info("Generate summary ini: %s", summary_filepath)
 
     def _copy_report(self):
         from xdevice import Scheduler
@@ -452,7 +454,7 @@ class ResultReporter(IReporter):
         try:
             shutil.rmtree(dst_path, ignore_errors=True)
             os.makedirs(dst_path, exist_ok=True)
-            LOG.info("copy summary files to %s", dst_path)
+            LOG.info("Copy summary files to %s", dst_path)
 
             # copy reports to reports/latest folder
             for report_file in os.listdir(self.report_path):
@@ -460,11 +462,12 @@ class ResultReporter(IReporter):
                 dst_file = os.path.join(dst_path, report_file)
                 if os.path.isfile(src_file):
                     shutil.copyfile(src_file, dst_file)
-        except OSError:
+        except OSError as _:
             return
 
     def _compress_report_folder(self):
-        if self._check_mode(ModeType.decc):
+        if self._check_mode(ModeType.decc) or \
+                self._check_mode(ModeType.factory):
             return
 
         if not os.path.isdir(self.report_path):
@@ -486,25 +489,26 @@ class ResultReporter(IReporter):
         zip_object = zipfile.ZipFile(zipped_file, 'w', zipfile.ZIP_DEFLATED,
                                      allowZip64=True)
         try:
-            LOG.info("executing compress process, please wait...")
+            LOG.info("Executing compress process, please wait...")
             long_size_file = []
             for src_path, target_path in file_path_list:
                 long_size_file.append((src_path, target_path))
             self._write_long_size_file(zip_object, long_size_file)
-            LOG.info("generate zip file: %s", zipped_file)
+
+            LOG.info("Generate zip file: %s", zipped_file)
         except zipfile.BadZipFile as bad_error:
-            LOG.error("zip report folder error: %s" % bad_error.args)
+            LOG.error("Zip report folder error: %s" % bad_error.args)
         finally:
             zip_object.close()
 
         # generate hex digest, then save it to summary_report.hash
         hash_file = os.path.abspath(os.path.join(
             self.report_path, ReportConstant.summary_report_hash))
-        hash_file_open = os.open(hash_file,
-                                 os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o755)
+        hash_file_open = os.open(hash_file, os.O_WRONLY | os.O_CREAT |
+                                 os.O_APPEND, FilePermission.mode_755)
         with os.fdopen(hash_file_open, "w") as hash_file_handler:
             hash_file_handler.write(get_file_summary(zipped_file))
-            LOG.info("generate hash file: %s", hash_file)
+            LOG.info("Generate hash file: %s", hash_file)
             hash_file_handler.flush()
         return zipped_file
 
@@ -545,7 +549,7 @@ class ResultReporter(IReporter):
                 # others, write in plain text
                 file.write(bytes(_record_json, encoding="utf-8"))
 
-        LOG.info("generate record file: %s", record_file)
+        LOG.info("Generate record file: %s", record_file)
 
     def _parse_record_from_data(self, command, report_path):
         record = dict()
@@ -621,7 +625,8 @@ class ResultReporter(IReporter):
             else:
                 # others, read from plain text
                 result = json.loads(file.read())
-        if not len(result.keys()) == 5:
+        standard_length = 5
+        if not len(result.keys()) == standard_length:
             LOG.error("%s error!", ReportConstant.task_info_record)
             return ()
 
