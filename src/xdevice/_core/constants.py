@@ -287,4 +287,3 @@ class FilePermission(object):
 @dataclass
 class DeviceConnectorType:
     hdc = "usb-hdc"
-    adb = "usb-adb"

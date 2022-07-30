@@ -508,13 +508,13 @@ class Device(IDevice):
 
     def _sync_device_time(self):
         # 先同步PC和设备的时间
-        SHA_TZ = timezone(
+        sha_tz = timezone(
             timedelta(hours=8),
             name='Asia/Shanghai',
         )
-        ISOTIMEFORMAT = '%Y-%m-%d %H:%M:%S'
-        cur_time = datetime.now(tz=timezone.utc).astimezone(SHA_TZ)\
-            .strftime(ISOTIMEFORMAT)
+        iso_time_format = '%Y-%m-%d %H:%M:%S'
+        cur_time = datetime.now(tz=timezone.utc).astimezone(sha_tz)\
+            .strftime(iso_time_format)
         self.execute_shell_command("date '{}'".format(cur_time))
         self.execute_shell_command("hwclock --systohc")
 
@@ -627,18 +627,15 @@ class Device(IDevice):
             raise Exception("harmony rpc not running")
 
     def stop_harmony_rpc(self):
-        # 先杀掉uitest和devicetest
-        if self.is_harmony_rpc_running():
-            self.kill_all_uitest()
-            self.kill_devicetest_agent()
-        else:
-            self.log.debug("stop_harmony_rpc, devicetest rpc is not running.")
+        # 杀掉uitest和devicetest
+        self.kill_all_uitest()
+        self.kill_devicetest_agent()
 
     def is_harmony_rpc_running(self):
-        cmd = 'ps -ef | grep %s' % DEVICETEST_HAP_PACKAGE_NAME
+        cmd = 'ps -A | grep %s' % DEVICETEST_HAP_PACKAGE_NAME
         rpc_running = self.execute_shell_command(cmd).strip()
         self.log.debug('is_rpc_running out:{}'.format(rpc_running))
-        cmd = 'ps -ef | grep %s' % UITEST_NAME
+        cmd = 'ps -A | grep %s' % UITEST_NAME
         uitest_running = self.execute_shell_command(cmd).strip()
         self.log.debug('is_uitest_running out:{}'.format(uitest_running))
         if DEVICETEST_HAP_PACKAGE_NAME in rpc_running and UITEST_NAME in uitest_running:
@@ -646,24 +643,26 @@ class Device(IDevice):
         return False
 
     def kill_all_uitest(self):
-        cmd = 'ps -ef | grep %s' % UITEST_NAME
+        cmd = 'ps -A | grep %s' % UITEST_NAME
         out = self.execute_shell_command(cmd).strip()
+        self.log.debug('is_rpc_running out:{}'.format(out))
         out = out.split("\n")
-        for str in out:
-            if "start-daemon" in str:
-                str = str.split()
-                cmd = 'kill %s' % str[1]
+        for data in out:
+            if UITEST_NAME in data:
+                data = data.split()
+                cmd = 'kill %s' % data[1]
                 self.execute_shell_command(cmd).strip()
                 return
 
     def kill_devicetest_agent(self):
-        cmd = 'ps -ef | grep %s' % DEVICETEST_HAP_PACKAGE_NAME
+        cmd = 'ps -A | grep %s' % DEVICETEST_HAP_PACKAGE_NAME
         out = self.execute_shell_command(cmd).strip()
+        self.log.debug('is_rpc_running out:{}'.format(out))
         out = out.split("\n")
-        for str in out:
-            if DEVICETEST_HAP_PACKAGE_NAME in str:
-                str = str.split()
-                cmd = 'kill %s' % str[1]
+        for data in out:
+            if DEVICETEST_HAP_PACKAGE_NAME in data:
+                data = data.split()
+                data = 'kill %s' % data[1]
                 self.execute_shell_command(cmd).strip()
                 self.log.debug('stop devicetest ability success.')
                 return

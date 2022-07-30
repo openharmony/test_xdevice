@@ -41,8 +41,6 @@ from xdevice import ConfigConst
 from xdevice import DeviceTestType
 from xdevice import FilePermission
 from xdevice import AppInstallError
-from xdevice import UsbConst
-from xdevice import AppConst
 from xdevice import DeviceConnectorType
 from xdevice import convert_serial
 from xdevice import check_path_legal
@@ -325,183 +323,6 @@ class PushKit(ITestKit):
             self.pushed_file.append(dst)
 
 
-@Plugin(type=Plugin.TEST_KIT, id=CKit.install)
-class ApkInstallKit(ITestKit):
-    def __init__(self):
-        self.app_list = ""
-        self.app_list_name = ""
-        self.is_clean = ""
-        self.alt_dir = ""
-        self.ex_args = ""
-        self.installed_app = set()
-        self.paths = ""
-        self.is_pri_app = ""
-        self.pushed_hap_file = set()
-        self.env_index_list = None
-
-    def __check_config__(self, options):
-        self.app_list = get_config_value('test-file-name', options)
-        self.app_list_name = get_config_value('test-file-packName', options)
-        self.is_clean = get_config_value('cleanup-apks', options, False)
-        self.alt_dir = get_config_value('alt-dir', options, False)
-        if self.alt_dir and self.alt_dir.startswith("resource/"):
-            self.alt_dir = self.alt_dir[len("resource/"):]
-        self.ex_args = get_config_value('install-arg', options)
-        self.installed_app = set()
-        self.paths = get_config_value('paths', options)
-        self.is_pri_app = get_config_value('install-as-privapp', options,
-                                           False, default=False)
-        self.env_index_list = get_config_value('env-index', options)
-
-    def __setup__(self, device, **kwargs):
-        del kwargs
-        LOG.debug("ApkInstallKit setup, device:{}".format(device.device_sn))
-        if len(self.app_list) == 0:
-            LOG.info("No app to install, skipping!")
-            return
-        # to disable app install alert
-        device.execute_shell_command("setprop persist.sys.platformautotest 1")
-        for app in self.app_list:
-            if self.alt_dir:
-                app_file = get_file_absolute_path(app, self.paths,
-                                                  self.alt_dir)
-            else:
-                app_file = get_file_absolute_path(app, self.paths)
-            if app_file is None:
-                LOG.error("The app file {} does not exist".format(app))
-                continue
-            if app_file.endswith(".hap"):
-                self.install_hap(device, app_file)
-            else:
-                result = device.install_package(
-                    app_file, get_install_args(
-                        device, app_file, self.ex_args))
-                if not result.startswith("Success") or "successfully" not in result:
-                    raise AppInstallError(
-                        "Failed to install %s on %s. Reason:%s" %
-                        (app_file, device.__get_serial__(), result))
-            self.installed_app.add(app_file)
-
-    def __teardown__(self, device):
-        LOG.debug("ApkInstallKit teardown: device:{}".format(device.device_sn))
-        if self.is_clean and str(self.is_clean).lower() == "true":
-            if self.app_list_name and len(self.app_list_name) > 0:
-                for app_name in self.app_list_name:
-                    result = device.uninstall_package(app_name)
-                    if result and (result.startswith("Success") or "successfully" in result):
-                        LOG.debug("uninstalling package Success. result is %s" %
-                                  result)
-                    else:
-                        LOG.warning("Error uninstalling package %s %s" %
-                                    (device.__get_serial__(), result))
-            else:
-                for app in self.installed_app:
-                    if app.endswith(".hap"):
-                        app_name = get_app_name(app)
-                    else:
-                        app_name = get_app_name_by_tool(app, self.paths)
-                    if app_name:
-                        result = device.uninstall_package(app_name)
-                        if result and (result.startswith("Success") or "successfully" in result):
-                            LOG.debug("uninstalling package Success. result is %s" %
-                                      result)
-                        else:
-                            LOG.warning("Error uninstalling package %s %s" %
-                                        (device.__get_serial__(), result))
-                    else:
-                        LOG.warning("Can't find app name for %s" % app)
-        if self.is_pri_app:
-            remount(device)
-        for pushed_file in self.pushed_hap_file:
-            device.execute_shell_command("rm -r %s" % pushed_file)
-
-    def install_hap(self, device, hap_file):
-        if self.is_pri_app:
-            LOG.info("Install hap as privileged app {}".format(hap_file))
-            hap_name = os.path.basename(hap_file).replace(".hap", "")
-            try:
-                with TemporaryDirectory(prefix=hap_name) as temp_dir:
-                    zif_file = zipfile.ZipFile(hap_file)
-                    zif_file.extractall(path=temp_dir)
-                    entry_app = os.path.join(temp_dir, AppConst.entry_app)
-                    push_dest_dir = os.path.join("/system/priv-app/", hap_name)
-                    device.execute_shell_command("rm -rf " + push_dest_dir,
-                                                 output_flag=False)
-                    device.push_file(entry_app, os.path.join(
-                        push_dest_dir + os.path.basename(entry_app)))
-                    device.push_file(hap_file, os.path.join(
-                        push_dest_dir + os.path.basename(hap_file)))
-                    self.pushed_hap_file.add(os.path.join(
-                        push_dest_dir + os.path.basename(hap_file)))
-                    device.reboot()
-            except RuntimeError as exception:
-                msg = "Install hap app failed withe error {}".format(exception)
-                LOG.error(msg)
-                raise Exception(msg)
-            except Exception as exception:
-                msg = "Install hap app failed withe exception {}".format(
-                    exception)
-                LOG.error(msg)
-                raise Exception(msg)
-            finally:
-                zif_file.close()
-        else:
-            push_dest = "/%s" % "sdcard"
-            push_dest = "%s/%s" % (push_dest, os.path.basename(hap_file))
-            device.push_file(hap_file, push_dest)
-            self.pushed_hap_file.add(push_dest)
-            output = device.execute_shell_command("bm install -p " + push_dest)
-            if not output.startswith("Success"):
-                output = output.strip()
-                if "[ERROR_GET_BUNDLE_INSTALLER_FAILED]" not in output.upper():
-                    raise AppInstallError(
-                        "Failed to install %s on %s. Reason:%s" %
-                        (push_dest, device.__get_serial__(), output))
-                else:
-                    LOG.info("'[ERROR_GET_BUNDLE_INSTALLER_FAILED]' occurs, "
-                             "retry install hap")
-                    exec_out = self.retry_install_hap(
-                        device, "bm install -p " + push_dest)
-                    if not exec_out.startswith("Success"):
-                        raise AppInstallError(
-                            "Retry failed,Can't install %s on %s. Reason:%s" %
-                            (push_dest, device.__get_serial__(), exec_out))
-            else:
-                LOG.debug("Install %s success" % push_dest)
-
-    @classmethod
-    def retry_install_hap(cls, device, command):
-        if device.usb_type == DeviceConnectorType.hdc:
-            if hasattr(device, "is_harmony") and device.is_harmony:
-                real_command = ["hdc_std", "-t", str(device.device_sn), "-s",
-                                "tcp:%s:%s" % (str(device.host), str(device.port)),
-                                "shell", command]
-            else:
-                # hdc -t UID -s tcp:IP:PORT
-                real_command = ["hdc", "-t", str(device.device_sn), "-s",
-                                "tcp:%s:%s" % (str(device.host), str(device.port)),
-                                "shell", command]
-        else:
-            real_command = [UsbConst.connector, "-s", str(device.device_sn),
-                            "-H", str(device.host), "-P", str(device.port),
-                            "shell", command]
-        message = "%s execute command: %s" % \
-                  (convert_serial(device.device_sn), " ".join(real_command))
-        LOG.info(message)
-        exec_out = ""
-        for wait_count in range(1, MAX_WAIT_COUNT):
-            LOG.debug("Retry times:%s, wait %ss" %
-                      (wait_count, (wait_count * 10)))
-            time.sleep(wait_count * 10)
-            exec_out = exec_cmd(real_command)
-            if exec_out and exec_out.startswith("Success"):
-                break
-        if not exec_out:
-            exec_out = "System is not in %s" % ["Windows", "Linux", "Darwin"]
-        LOG.info("Retry install hap result is: [%s]" % exec_out.strip())
-        return exec_out
-
-
 @Plugin(type=Plugin.TEST_KIT, id=CKit.propertycheck)
 class PropertyCheckKit(ITestKit):
     def __init__(self):
@@ -577,8 +398,8 @@ class ShellKit(ITestKit):
 @Plugin(type=Plugin.TEST_KIT, id=CKit.wifi)
 class WifiKit(ITestKit):
     def __init__(self):
-        self.certfilename =""
-        self.certpassword= ""
+        self.certfilename = ""
+        self.certpassword = ""
         self.wifiname = ""
         self.paths = ""
 
@@ -665,7 +486,7 @@ class Props:
     @dataclass
     class Paths:
         system_build_prop_path = "/%s/%s" % ("system", "build.prop")
-        service_wifi_app_path = "tools/wifi/%s" % AppConst.wifi_app
+        service_wifi_app_path = "tools/wifi/%s" % "Service-wifi.app"
 
     dest_root = "/%s/%s/" % ("data", "data")
     mnt_external_storage = "EXTERNAL_STORAGE"
@@ -817,8 +638,12 @@ class ConfigKit(ITestKit):
             temp_cust_file = NamedTemporaryFile(prefix='cust', suffix='.prop',
                                                 delete=False).name
             self.local_cust_prop_file[cust_file] = temp_cust_file
-            prop_changed = modify_props(device, temp_cust_file, cust_file,
-                                        new_props[name]) or prop_changed
+            try:
+                prop_changed = modify_props(device, temp_cust_file, cust_file,
+                                            new_props[name]) or prop_changed
+            except KeyError:
+                LOG.error("Get props error.")
+                continue
         return prop_changed
 
 
@@ -868,7 +693,6 @@ class AppInstallKit(ITestKit):
                 LOG.error("The app file {} does not exist".format(app))
                 continue
             if app_file.endswith(".hap"):
-                # OpenHarmony device
                 if hasattr(device, "is_harmony") and device.is_harmony:
                     device.connector_command("install {}".format(app_file))
                 else:
@@ -925,7 +749,7 @@ class AppInstallKit(ITestKit):
                 with TemporaryDirectory(prefix=hap_name) as temp_dir:
                     zif_file = zipfile.ZipFile(hap_file)
                     zif_file.extractall(path=temp_dir)
-                    entry_app = os.path.join(temp_dir, AppConst.entry_app)
+                    entry_app = os.path.join(temp_dir, "Entry.app")
                     push_dest_dir = os.path.join("/system/priv-app/", hap_name)
                     device.execute_shell_command("rm -rf " + push_dest_dir,
                                                  output_flag=False)
@@ -973,19 +797,14 @@ class AppInstallKit(ITestKit):
 
     @classmethod
     def retry_install_hap(cls, device, command):
-        if device.usb_type == DeviceConnectorType.hdc:
-            if hasattr(device, "is_harmony") and device.is_harmony:
-                real_command = ["hdc_std", "-t", str(device.device_sn), "-s",
-                                "tcp:%s:%s" % (str(device.host), str(device.port)),
-                                "shell", command]
-            else:
-                # hdc -t UID -s tcp:IP:PORT
-                real_command = ["hdc", "-t", str(device.device_sn), "-s",
-                                "tcp:%s:%s" % (str(device.host), str(device.port)),
-                                "shell", command]
+        if hasattr(device, "is_harmony") and device.is_harmony:
+            real_command = ["hdc_std", "-t", str(device.device_sn), "-s",
+                            "tcp:%s:%s" % (str(device.host), str(device.port)),
+                            "shell", command]
         else:
-            real_command = [UsbConst.connector, "-s", str(device.device_sn),
-                            "-H", str(device.host), "-P", str(device.port),
+            # hdc -t UID -s tcp:IP:PORT
+            real_command = ["hdc", "-t", str(device.device_sn), "-s",
+                            "tcp:%s:%s" % (str(device.host), str(device.port)),
                             "shell", command]
         message = "%s execute command: %s" % \
                   (convert_serial(device.device_sn), " ".join(real_command))

@@ -613,7 +613,6 @@ class Scheduler(object):
             SuiteReporter.append_report_result(
                 (virtual_report_path, report_result))
         else:
-            import shutil
             history_execute_result = report_data_dict.get(module_name, "")
             LOG.info("Start copy %s" % history_execute_result)
             file_name = get_filename_extension(history_execute_result)[0]
