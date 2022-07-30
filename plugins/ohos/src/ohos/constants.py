@@ -63,7 +63,6 @@ class DeviceLiteKernel(object):
 @dataclass
 class CKit:
     push = "PushKit"
-    install = "ApkInstallKit"
     liteinstall = "LiteAppInstallKit"
     command = "CommandKit"
     config = "ConfigKit"

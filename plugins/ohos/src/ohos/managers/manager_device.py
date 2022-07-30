@@ -27,6 +27,7 @@ from xdevice import platform_logger
 from xdevice import ParamError
 from xdevice import ConfigConst
 from xdevice import HdcCommandRejectedException
+from xdevice import DeviceConnectorType
 from xdevice import DeviceEvent
 from xdevice import TestDeviceState
 from xdevice import DeviceState
@@ -93,7 +94,7 @@ class ManagerDevice(IDeviceManager):
                     device.get("usb_type"), error))
                 self.device_connector = DeviceConnector(
                     device.get("ip"), device.get("port"),
-                    "usb-hdc")
+                    DeviceConnectorType.hdc)
                 self.device_connector.add_device_change_listener(
                     self.managed_device_listener)
                 self.device_connector.start()

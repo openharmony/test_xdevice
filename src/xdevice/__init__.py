@@ -69,6 +69,12 @@ from _core.testkit.json_parser import JsonParser
 from _core.testkit.kit import junit_para_parse
 from _core.testkit.kit import gtest_para_parse
 from _core.testkit.kit import reset_junit_para
+from _core.testkit.kit import get_app_name_by_tool
+from _core.testkit.kit import get_install_args
+from _core.testkit.kit import remount
+from _core.testkit.kit import disable_keyguard
+from _core.testkit.kit import unlock_screen
+from _core.testkit.kit import unlock_device
 from _core.driver.parser_lite import ShellHandler
 from _core.report.encrypt import check_pub_key_exist
 from _core.utils import get_file_absolute_path
@@ -181,6 +187,12 @@ __all__ = [
     "junit_para_parse",
     "gtest_para_parse",
     "reset_junit_para",
+    "get_app_name_by_tool",
+    "get_install_args",
+    "remount",
+    "disable_keyguard",
+    "unlock_screen",
+    "unlock_device",
     "ShellHandler",
     "ResultCode",
     "check_pub_key_exist",
