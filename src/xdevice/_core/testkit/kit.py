@@ -17,13 +17,42 @@
 #
 
 import os
+import re
 import stat
 import json
+import time
+import platform
+import subprocess
+import signal
+from threading import Timer
+
+from _core.utils import get_file_absolute_path
 from _core.logger import platform_logger
 from _core.exception import ParamError
 from _core.constants import DeviceTestType
+from _core.constants import FilePermission
+from _core.constants import DeviceConnectorType
 
 LOG = platform_logger("Kit")
+
+TARGET_SDK_VERSION = 22
+
+__all__ = ["get_app_name_by_tool", "junit_para_parse", "gtest_para_parse",
+           "get_install_args", "reset_junit_para", "remount", "disable_keyguard",
+           "timeout_callback", "unlock_screen", "unlock_device"]
+
+
+def remount(device):
+    device.enable_hdc_root()
+    cmd = "target mount" \
+        if device.usb_type == DeviceConnectorType.hdc else "remount"
+    device.connector_command(cmd)
+    device.execute_shell_command("remount")
+    device.execute_shell_command("mount -o rw,remount /cust")
+    device.execute_shell_command("mount -o rw,remount /product")
+    device.execute_shell_command("mount -o rw,remount /hw_product")
+    device.execute_shell_command("mount -o rw,remount /version")
+    device.execute_shell_command("mount -o rw,remount /%s" % "system")
 
 
 def _get_class(junit_paras, prefix_char, para_name):
@@ -75,7 +104,6 @@ def junit_para_parse(device, junit_paras, prefix_char="-e"):
     # Disable screen keyguard
     disable_key_guard = junit_paras.get('disable-keyguard')
     if not disable_key_guard or disable_key_guard[0].lower() != 'false':
-        from ohos.drivers.drivers import disable_keyguard
         disable_keyguard(device)
 
     for para_name in junit_paras.keys():
@@ -165,3 +193,115 @@ def reset_junit_para(junit_para_str, prefix_char="-e", ignore_keys=None):
                 continue
             normal_lines.append("{} {}".format(prefix_char, line))
     return " ".join(normal_lines)
+
+
+def get_install_args(device, app_name, original_args=None):
+    """To obtain all the args of app install
+    Args:
+        original_args: the argus configure in .config file
+        device : the device will be installed app
+        app_name : the name of the app which will be installed
+    Returns:
+        All the args
+    """
+    if original_args is None:
+        original_args = []
+    new_args = original_args[:]
+    try:
+        sdk_version = device.get_property("ro.build.version.sdk")
+        if int(sdk_version) > TARGET_SDK_VERSION:
+            new_args.append("-g")
+    except TypeError as type_error:
+        LOG.error("Obtain the sdk version failed with exception {}".format(
+            type_error))
+    except ValueError as value_error:
+        LOG.error("Obtain the sdk version failed with exception {}".format(
+            value_error))
+    if app_name.endswith(".apex"):
+        new_args.append("--apex")
+    return " ".join(new_args)
+
+
+def get_app_name_by_tool(app_path, paths):
+    """To obtain the app name by using tool
+    Args:
+        app_path: the path of app
+        paths:
+    Returns:
+        The Pkg Name if found else None
+    """
+    rex = "^package:\\s+name='(.*?)'.*$"
+    aapt_tool_name = "aapt.exe" if os.name == "nt" else "aapt"
+    if app_path:
+        proc_timer = None
+        try:
+            tool_file = get_file_absolute_path(os.path.join(
+                "tools", aapt_tool_name), paths)
+            LOG.debug("Aapt file is %s" % tool_file)
+
+            if platform.system() == "Linux":
+                if not oct(os.stat(tool_file).st_mode)[-3:] == "755":
+                    os.chmod(tool_file, FilePermission.mode_755)
+
+            cmd = [tool_file, "dump", "badging", app_path]
+            timeout = 300
+            LOG.info("Execute command %s with %s" % (" ".join(cmd), timeout))
+
+            sub_process = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                           stderr=subprocess.PIPE)
+            proc_timer = Timer(timeout, timeout_callback, [sub_process])
+            proc_timer.start()
+            # The package name must be return in first line
+            output = sub_process.stdout.readline()
+            error = sub_process.stderr.readline()
+            LOG.debug("The output of aapt is {}".format(output))
+            if error:
+                LOG.debug("The error of aapt is {}".format(error))
+            if output:
+                pkg_match = re.match(rex, output.decode("utf8", 'ignore'))
+                if pkg_match is not None:
+                    LOG.info(
+                        "Obtain the app name {} successfully by using "
+                        "aapt".format(pkg_match.group(1)))
+                    return pkg_match.group(1)
+            return None
+        except (FileNotFoundError, ParamError) as error:
+            LOG.debug("Aapt error: %s", error.args)
+            return None
+        finally:
+            if proc_timer:
+                proc_timer.cancel()
+    else:
+        LOG.error("get_app_name_by_tool error.")
+        return None
+
+
+def timeout_callback(proc):
+    try:
+        LOG.error("Error: execute command timeout.")
+        LOG.error(proc.pid)
+        if platform.system() != "Windows":
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            subprocess.call(
+                ["C:\\Windows\\System32\\taskkill", "/F", "/T", "/PID",
+                 str(proc.pid)], shell=False)
+    except (FileNotFoundError, KeyboardInterrupt, AttributeError) as error:
+        LOG.exception("Timeout callback exception: %s" % error, exc_info=False)
+
+
+def disable_keyguard(device):
+    unlock_screen(device)
+    unlock_device(device)
+
+
+def unlock_screen(device):
+    device.execute_shell_command("svc power stayon true")
+    time.sleep(1)
+
+
+def unlock_device(device):
+    device.execute_shell_command("input keyevent 82")
+    time.sleep(1)
+    device.execute_shell_command("wm dismiss-keyguard")
+    time.sleep(1)

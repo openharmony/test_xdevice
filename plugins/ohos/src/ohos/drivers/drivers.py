@@ -53,8 +53,11 @@ from xdevice import HdcError
 from xdevice import DeviceConnectorType
 from xdevice import get_filename_extension
 from xdevice import junit_para_parse
-from xdevice import reset_junit_para
 from xdevice import gtest_para_parse
+from xdevice import reset_junit_para
+from xdevice import disable_keyguard
+from xdevice import unlock_screen
+from xdevice import unlock_device
 
 from ohos.environment.dmlib import process_command_ret
 from ohos.environment.dmlib import DisplayOutputReceiver
@@ -62,7 +65,7 @@ from ohos.testkit.kit import junit_dex_para_parse
 
 __all__ = ["CppTestDriver", "DexTestDriver", "HapTestDriver",
            "JSUnitTestDriver", "JUnitTestDriver", "RemoteTestRunner",
-           "RemoteDexRunner", "disable_keyguard"]
+           "RemoteDexRunner"]
 LOG = platform_logger("Drivers")
 DEFAULT_TEST_PATH = "/%s/%s/" % ("data", "test")
 ON_DEVICE_TEST_DIR_LOCATION = "/%s/%s/%s/" % ("data", "local", "tmp")
@@ -1921,8 +1924,8 @@ class HapTestDriver(IDriver):
         return return_message
 
     def _execute_hapfile_junittest(self, filename, testpara, target_test_path):
-        _unlock_screen(self.config.device)
-        _unlock_device(self.config.device)
+        unlock_screen(self.config.device)
+        unlock_device(self.config.device)
 
         try:
             if not filename.endswith(self.instrument_hap_file_suffix):
@@ -2672,23 +2675,6 @@ class LTPPosixTestDriver(IDriver):
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""
-
-
-def disable_keyguard(device):
-    _unlock_screen(device)
-    _unlock_device(device)
-
-
-def _unlock_screen(device):
-    device.execute_shell_command("svc power stayon true")
-    time.sleep(1)
-
-
-def _unlock_device(device):
-    device.execute_shell_command("input keyevent 82")
-    time.sleep(1)
-    device.execute_shell_command("wm dismiss-keyguard")
-    time.sleep(1)
 
 
 def _lock_screen(device):

@@ -35,14 +35,12 @@ from xdevice import get_plugin
 from xdevice import IShellReceiver
 from xdevice import exec_cmd
 from xdevice import get_file_absolute_path
-from xdevice import ParamError
 from xdevice import FilePermission
 from xdevice import DeviceError
 from xdevice import HdcError
 from xdevice import HdcCommandRejectedException
 from xdevice import ShellCommandUnresponsiveException
 from xdevice import DeviceState
-from xdevice import DeviceConnectorType
 from xdevice import convert_serial
 from xdevice import is_proc_running
 from xdevice import convert_ip
