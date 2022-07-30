@@ -18,7 +18,6 @@
 
 import pkg_resources
 
-from .variables import Variables
 from _core.plugin import Plugin
 from _core.plugin import get_plugin
 from _core.logger import platform_logger
@@ -115,9 +114,8 @@ from _core.report.result_reporter import ResultReporter
 from _core.report.reporter_helper import DataHelper
 from _core.report.__main__ import main_report
 from _core.command.console import Console
-from adapter.xdevice_adapter.constants import UsbConst
-from adapter.xdevice_adapter.constants import AppConst
-from adapter.xdevice_adapter.constants import AppConst
+from .variables import Variables
+
 __all__ = [
     "Variables",
     "Console",
@@ -213,9 +211,7 @@ __all__ = [
     "ExecInfo",
     "ResultReporter",
     "DataHelper",
-    "main_report",
-    "UsbConst",
-    "AppConst"
+    "main_report"
 ]
 
 

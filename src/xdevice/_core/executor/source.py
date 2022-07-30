@@ -32,7 +32,6 @@ from _core.logger import platform_logger
 from _core.utils import get_filename_extension
 from _core.utils import is_config_str
 from _core.utils import unique_id
-from adapter.xdevice_adapter.constants import AppConst
 
 __all__ = ["TestSetSource", "TestSource", "find_test_descriptors",
            "find_testdict_descriptors", "TestDictSource"]
@@ -43,14 +42,14 @@ TestSource = namedtuple('TestSource', 'source_file source_string config_file '
 
 TEST_TYPE_DICT = {"DEX": DeviceTestType.dex_test,
                   "HAP": DeviceTestType.hap_test,
-                  AppConst.app_name: DeviceTestType.hap_test,
+                  "APK": DeviceTestType.hap_test,
                   "PYT": HostDrivenTestType.device_test,
                   "JST": DeviceTestType.jsunit_test,
                   "CXX": DeviceTestType.cpp_test,
                   "BIN": DeviceTestType.lite_cpp_test}
 EXT_TYPE_DICT = {".dex": DeviceTestType.dex_test,
                  ".hap": DeviceTestType.hap_test,
-                 AppConst.app_ext: DeviceTestType.hap_test,
+                 ".apk": DeviceTestType.hap_test,
                  ".py": HostDrivenTestType.device_test,
                  ".js": DeviceTestType.jsunit_test,
                  ".bin": DeviceTestType.lite_cpp_test,
@@ -452,7 +451,7 @@ def _get_test_type(config_file, test_driver, ext):
     if ext in [".py", ".js", ".dex", ".hap", ".bin"] \
             and ext in TestDictSource.exe_type.keys():
         test_type = TestDictSource.exe_type[ext]
-    elif ext in [AppConst.app_ext] and ext in TestDictSource.exe_type.keys():
+    elif ext in [".apk"] and ext in TestDictSource.exe_type.keys():
         test_type = DeviceTestType.hap_test
     else:
         test_type = DeviceTestType.cpp_test

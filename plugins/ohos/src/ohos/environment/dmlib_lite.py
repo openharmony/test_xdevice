@@ -61,8 +61,6 @@ def check_open_source_test(result_output):
 
 def check_read_test_end(result=None, input_command=None):
     temp_result = result.replace("\n", "")
-    # if input_command not in temp_result:
-    #     return False
     index = result.find(input_command) + len(input_command)
     result_output = result[index:]
     if input_command.startswith("./"):
@@ -188,14 +186,6 @@ class LiteHelper:
         result = ""
         status = True
         from xdevice import Scheduler
-
-        # while time.time() - start_time < timeout:
-        #     data = com.readline().decode('gbk', errors='ignore')
-        #     data = PATTERN.sub('', data).replace("\r", "")
-        #     result = "{}{}".format(result, data)
-        #     if command in result or linux_end_command in result:
-        #         break
-
         while time.time() - start_time < timeout:
             if not Scheduler.is_execute:
                 raise ExecuteTerminate("Execute terminate", error_no="00300")

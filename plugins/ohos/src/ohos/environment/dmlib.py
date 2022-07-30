@@ -41,7 +41,6 @@ from xdevice import DeviceError
 from xdevice import HdcError
 from xdevice import HdcCommandRejectedException
 from xdevice import ShellCommandUnresponsiveException
-from xdevice import UsbConst
 from xdevice import DeviceState
 from xdevice import DeviceConnectorType
 from xdevice import convert_serial
@@ -116,9 +115,6 @@ class HdcMonitor:
         try:
             LOG.debug("HdcMonitor usb type is %s" % self.server.usb_type)
             connector_name = "hdc_std" if HdcHelper.is_hdc_std() else "hdc"
-            # 先停止ADB，因为ADB与HDC有冲突
-            # if shutil.which(UsbConst.connector) is not None:
-            #     self.stop_hdc(UsbConst.connector)
             self.init_hdc(connector_name)
             server_thread = threading.Thread(target=self.loop_monitor,
                                              name="HdcMonitor", args=())
@@ -152,26 +148,6 @@ class HdcMonitor:
                 local_port=self.channel.setdefault(
                     "port", port))
             time.sleep(1)
-
-    @staticmethod
-    def stop_hdc(connector="hdc"):
-        """
-        Starts the hdc host side server.
-        """
-        if connector.startswith("hdc"):
-            if is_proc_running(connector):
-                try:
-                    LOG.debug("HdcMonitor %s kill" % connector)
-                    exec_cmd([connector, "kill"])
-                except ParamError as error:
-                    LOG.debug("HdcMonitor hdc kill error:%s" % error)
-                except FileNotFoundError as _:
-                    LOG.warning('Cannot kill hdc process, '
-                                'please close it manually!')
-        else:
-            if is_proc_running(UsbConst.connector):
-                LOG.debug("HdcMonitor %s" % UsbConst.kill_server)
-                exec_cmd([UsbConst.connector, "kill-server"])
 
     def stop(self):
         """
@@ -329,7 +305,6 @@ class HdcMonitor:
         if kill:
             LOG.debug("HdcMonitor hdc kill")
             exec_cmd([connector, "kill"])
-        # self.stop_hdc(UsbConst.connector)
         LOG.debug("HdcMonitor hdc start")
         exec_cmd(
             [connector, "start"],
@@ -567,13 +542,8 @@ class SyncService:
         """
         mode = self.read_mode(remote)
         self.device.log.debug("Remote file %s mode is %d" % (remote, mode))
-        if self.device.usb_type == DeviceConnectorType.hdc:
-            self.device.log.debug("%s execute command: hdc push %s %s" % (
-                convert_serial(self.device.device_sn), local, remote))
-        else:
-            self.device.log.debug("%s execute command: %s %s %s" % (
-                convert_serial(self.device.device_sn), UsbConst.push, local,
-                remote))
+        self.device.log.debug("%s execute command: hdc push %s %s" % (
+            convert_serial(self.device.device_sn), local, remote))
         if str(mode).startswith("168"):
             remote = "%s/%s" % (remote, os.path.basename(local))
 

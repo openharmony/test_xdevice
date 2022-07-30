@@ -17,11 +17,13 @@
 #
 import os
 import sys
-srcpath = os.path.dirname(os.path.dirname(__file__))
-sys.path.append(srcpath)
 from xdevice import Console
 from xdevice import platform_logger
 from _core.utils import get_version
+
+
+srcpath = os.path.dirname(os.path.dirname(__file__))
+sys.path.append(srcpath)
 
 LOG = platform_logger("Main")
 
