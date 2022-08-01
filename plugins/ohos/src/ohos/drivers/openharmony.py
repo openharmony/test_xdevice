@@ -366,7 +366,6 @@ class OHJSUnitTestDriver(IDriver):
                                                   if test_to_run else 0))
         if not test_to_run:
             self.runner.run(listener)
-            self.runner.notify_finished()
         else:
             self._run_with_rerun(listener, test_to_run)
 
@@ -393,43 +392,35 @@ class OHJSUnitTestDriver(IDriver):
             expected_tests = TestDescription.remove_test(expected_tests,
                                                          test_run)
             if not expected_tests:
-                LOG.warning("No tests to re-run twice,please check")
-                self.runner.notify_finished()
+                LOG.debug("No tests to re-run, all tests executed at least "
+                          "once.")
+            if self.rerun_all:
+                self._rerun_all(expected_tests, listener)
             else:
-                self._rerun_twice(expected_tests, listener)
-        else:
-            LOG.debug("Rerun once success")
-            self.runner.notify_finished()
+                self._rerun_serially(expected_tests, listener)
 
-    def _rerun_twice(self, expected_tests, listener):
+    def _rerun_all(self, expected_tests, listener):
         tests = []
         for test in expected_tests:
             tests.append("%s#%s" % (test.class_name, test.test_name))
         self.runner.add_arg("class", ",".join(tests))
-        LOG.debug("Ready to rerun twice, expect run: %s" % len(expected_tests))
+        LOG.debug("Ready to rerun all, expect run: %s" % len(expected_tests))
         test_run = self._run_tests(listener)
-        LOG.debug("Rerun twice, has run: %s" % len(test_run))
+        LOG.debug("Rerun all, has run: %s" % len(test_run))
         if len(test_run) < len(expected_tests):
             expected_tests = TestDescription.remove_test(expected_tests,
                                                          test_run)
             if not expected_tests:
-                LOG.warning("No tests to re-run third,please check")
-                self.runner.notify_finished()
-            else:
-                self._rerun_third(expected_tests, listener)
-        else:
-            LOG.debug("Rerun twice success")
-            self.runner.notify_finished()
+                LOG.debug("Rerun textFile success")
+            self._rerun_serially(expected_tests, listener)
 
-    def _rerun_third(self,  expected_tests, listener):
-        tests = []
+    def _rerun_serially(self, expected_tests, listener):
+        LOG.debug("Rerun serially, expected run: %s" % len(expected_tests))
         for test in expected_tests:
-            tests.append("%s#%s" % (test.class_name, test.test_name))
-        self.runner.add_arg("class", ",".join(tests))
-        LOG.debug("Ready to rerun third, expect run: %s" % len(expected_tests))
-        self._run_tests(listener)
-        LOG.debug("Rerun third success")
-        self.runner.notify_finished()
+            self.runner.add_arg(
+                "class", "%s#%s" % (test.class_name, test.test_name))
+            self.runner.rerun(listener, test)
+            self.runner.remove_arg("class")
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""
@@ -458,20 +449,10 @@ class OHJSUnitTestRunner:
         command = self._get_dry_run_command()
         self.config.device.execute_shell_command(
             command, timeout=self.config.timeout, receiver=handler, retry=0)
-        self.expect_tests_dict = parser_instances[0].tests_dict
+
         return parser_instances[0].tests
 
     def run(self, listener):
-        handler = self._get_shell_handler(listener)
-        command = self._get_run_command()
-        self.config.device.execute_shell_command(
-            command, timeout=self.config.timeout, receiver=handler, retry=0)
-
-    def notify_finished(self):
-        if self.finished_observer:
-            self.finished_observer.notify_task_finished()
-
-    def _get_shell_handler(self, listener):
         parsers = get_plugin(Plugin.PARSER, CommonParserType.oh_jsunit)
         if parsers:
             parsers = parsers[:1]
@@ -480,11 +461,54 @@ class OHJSUnitTestRunner:
             parser_instance = parser.__class__()
             parser_instance.suite_name = self.suite_name
             parser_instance.listeners = listener
-            parser_instance.runner = self
             parser_instances.append(parser_instance)
-            self.finished_observer = parser_instance
         handler = ShellHandler(parser_instances)
-        return handler
+        command = self._get_run_command()
+        self.config.device.execute_shell_command(
+            command, timeout=self.config.timeout, receiver=handler, retry=0)
+
+    def rerun(self, listener, test):
+        handler = None
+        if self.rerun_attemp:
+            test_tracker = CollectingPassListener()
+            try:
+
+                listener_copy = listener.copy()
+                listener_copy.append(test_tracker)
+                parsers = get_plugin(Plugin.PARSER, CommonParserType.oh_jsunit)
+                if parsers:
+                    parsers = parsers[:1]
+                parser_instances = []
+                for parser in parsers:
+                    parser_instance = parser.__class__()
+                    parser_instance.suite_name = self.suite_name
+                    parser_instance.listeners = listener_copy
+                    parser_instances.append(parser_instance)
+                handler = ShellHandler(parser_instances)
+                command = self._get_run_command()
+                self.config.device.execute_shell_command(
+                    command, timeout=self.config.timeout, receiver=handler,
+                    retry=0)
+            except ShellCommandUnresponsiveException as _:
+                LOG.debug("Exception: ShellCommandUnresponsiveException")
+            finally:
+                if not len(test_tracker.get_current_run_results()):
+                    LOG.debug("No test case is obtained finally")
+                    self.rerun_attemp -= 1
+                    handler.parsers[0].mark_test_as_blocked(test)
+        else:
+            LOG.debug("Not execute and mark as blocked finally")
+            parsers = get_plugin(Plugin.PARSER, CommonParserType.cpptest)
+            if parsers:
+                parsers = parsers[:1]
+            parser_instances = []
+            for parser in parsers:
+                parser_instance = parser.__class__()
+                parser_instance.suite_name = self.suite_name
+                parser_instance.listeners = listener
+                parser_instances.append(parser_instance)
+            handler = ShellHandler(parser_instances)
+            handler.parsers[0].mark_test_as_blocked(test)
 
     def add_arg(self, name, value):
         if not name or not value:
