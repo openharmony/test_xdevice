@@ -146,8 +146,8 @@ def _append_component_test_source(config, testcases_dir, test_sources):
         modes = stat.S_IWUSR | stat.S_IRUSR
         with os.fdopen(os.open(info_file, flags, modes), "r") as f_handler:
             result_dict.update(json.load(f_handler))
-        module_name = result_dict.get("module_name", "")
-        part_name = result_dict.get("part_name", "")
+        module_name = result_dict.get("module", "")
+        part_name = result_dict.get("part", "")
         subsystem_name = result_dict.get("subsystem", "")
         if not module_name or not part_name or not subsystem_name:
             continue
