@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from _core.exception import ParamError
 from _core.logger import platform_logger
 from _core.utils import get_local_ip
-
 
 __all__ = ["UserConfigManager"]
 LOG = platform_logger("ConfigManager")
@@ -56,7 +55,7 @@ class UserConfigManager(object):
                                 path, ConfigFileConst.userconfig_filepath))
                             break
 
-                LOG.debug("user config path: %s" % self.file_path)
+                LOG.debug("User config path: %s" % self.file_path)
                 if os.path.exists(self.file_path):
                     tree = ET.parse(self.file_path)
                     self.config_content = tree.getroot()
@@ -89,7 +88,7 @@ class UserConfigManager(object):
     @staticmethod
     def _verify_duplicate(items):
         if len(set(items)) != len(items):
-            LOG.warning("find duplicate sn config, configuration incorrect")
+            LOG.warning("Find duplicate sn config, configuration incorrect")
             return False
         return True
 
@@ -161,7 +160,7 @@ class UserConfigManager(object):
         devices = []
 
         for node in self.config_content.findall(target_name):
-            if node.attrib["type"] != "com" and node.attrib["type"] != "agent":
+            if node.attrib["type"] != "com":
                 continue
 
             device = [node.attrib]
@@ -193,7 +192,8 @@ class UserConfigManager(object):
     def get_device(self, target_name):
         for node in self.config_content.findall(target_name):
             data_dic = {}
-            if node.attrib["type"] != "usb-hdc":
+            if node.attrib["type"] != "usb-hdc" and \
+                    node.attrib["type"] != "usb-adb":
                 continue
             data_dic["usb_type"] = node.attrib["type"]
             for sub in node:
@@ -242,3 +242,10 @@ class UserConfigManager(object):
                 for child in node:
                     data_dic.update({child.tag: str(child.text).strip()})
         return data_dic
+
+    def get_device_log_status(self):
+        node = self.config_content.find("devicelog")
+        if node is not None:
+            return str(node.text).strip()
+        return None
+

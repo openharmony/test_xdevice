@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -34,8 +34,9 @@ __all__ = ["Log", "platform_logger", "device_logger", "shutdown",
 
 _HANDLERS = []
 _LOGGERS = []
-MAX_LOG_LENGTH = 10 * 1024 * 1024
+MAX_LOG_LENGTH = 20 * 1024 * 1024
 MAX_ENCRYPT_LOG_LENGTH = 5 * 1024 * 1024
+MAX_LOG_NUMS = 1000
 
 
 class Log:
@@ -56,7 +57,7 @@ class Log:
         self.handlers = []
         if log_file and "console" in log_handler_flag:
             file_handler = RotatingFileHandler(
-                log_file, mode="a", maxBytes=MAX_LOG_LENGTH, backupCount=5,
+                log_file, mode="a", maxBytes=MAX_LOG_LENGTH, backupCount=MAX_LOG_NUMS,
                 encoding="UTF-8")
             file_handler.setFormatter(logging.Formatter(log_format))
             self.handlers.append(file_handler)
@@ -92,7 +93,7 @@ class Log:
     def add_task_file_handler(self, log_file):
         from xdevice import Variables
         file_handler = RotatingFileHandler(
-                log_file, mode="a", maxBytes=MAX_LOG_LENGTH, backupCount=5,
+                log_file, mode="a", maxBytes=MAX_LOG_LENGTH, backupCount=MAX_LOG_NUMS,
                 encoding="UTF-8")
         file_handler.setFormatter(logging.Formatter(
             Variables.report_vars.log_format))
@@ -114,7 +115,7 @@ class Log:
         file_handler = \
             EncryptFileHandler(log_file, mode="ab",
                                max_bytes=MAX_ENCRYPT_LOG_LENGTH,
-                               backup_count=5, encoding="utf-8")
+                               backup_count=MAX_LOG_NUMS, encoding="utf-8")
         file_handler.setFormatter(logging.Formatter(
             Variables.report_vars.log_format))
         self.encrypt_file_handler = file_handler
@@ -378,8 +379,7 @@ class EncryptFileHandler(RotatingFileHandler):
 
         # baseFilename is the attribute in FileHandler
         base_file_name = getattr(self, "baseFilename", None)
-        with open(base_file_name, self.mode) as encrypt_file:
-            return encrypt_file
+        return open(base_file_name, self.mode)
 
     def emit(self, record):
         try:
@@ -398,7 +398,7 @@ class EncryptFileHandler(RotatingFileHandler):
             stream = getattr(self, "stream", self._open())
             stream.write(msg)
             self.flush()
-        except RecursionError:
+        except RecursionError as _:
             raise
 
     def _encrypt_valid(self):

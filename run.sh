@@ -31,12 +31,16 @@ fi
 
 $PYTHON -c 'import sys; exit(1) if sys.version_info.major < 3 or sys.version_info.minor < 7 else exit(0)' || \
 error "Python3.7 or higher version required!"
-cd $(dirname "$0") || error "Failure to change directory!"
+cd $(dirname "$0") || error "Failure to change direcory!"
 $PYTHON -c "import pip" || error "Please install pip first!"
 
-if [ ! -d "$TOOLS" ]; then
+if [ ! -d $TOOLS ]; then
   error "$TOOLS directory not exists"
 fi
+
+$PYTHON -m pip uninstall -y xdevice
+$PYTHON -m pip uninstall -y xdevice-extension
+$PYTHON -m pip uninstall -y xdevice-ohos
 
 for f in "$TOOLS"/*.egg
 do

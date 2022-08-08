@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -30,7 +30,6 @@ from _core.executor.request import Request
 from _core.logger import platform_logger
 from _core.plugin import Config
 from _core.utils import get_instance_name
-from _core.utils import get_filename_extension
 from _core.utils import check_mode
 from _core.exception import ParamError
 from _core.exception import ExecuteTerminate
@@ -98,7 +97,7 @@ class DriversThread(threading.Thread):
 
     def run(self):
         from xdevice import Scheduler
-        LOG.debug("thread id: %s start" % self.thread_id)
+        LOG.debug("Thread id: %s start" % self.thread_id)
         start_time = time.time()
         execute_message = ExecuteMessage('', self.environment,
                                          self.test_driver, self.thread_id)
@@ -122,11 +121,11 @@ class DriversThread(threading.Thread):
         except Exception as exception:
             error_no = getattr(exception, "error_no", "00000")
             if self.environment is None:
-                LOG.exception("exception: %s", exception, exc_info=False,
+                LOG.exception("Exception: %s", exception, exc_info=False,
                               error_no=error_no)
             else:
                 LOG.exception(
-                    "device: %s, exception: %s" % (
+                    "Device: %s, exception: %s" % (
                         self.environment.__get_serial__(), exception),
                     exc_info=False, error_no=error_no)
             self.error_message = "{}: {}".format(
@@ -155,7 +154,7 @@ class DriversThread(threading.Thread):
         # inherit history report under retry mode
         if driver and test:
             execute_result = driver.__result__()
-            LOG.debug("execute_result:%s" % execute_result)
+            LOG.debug("Execute result:%s" % execute_result)
             if getattr(self.task.config, "history_report_path", ""):
                 execute_result = self._inherit_execute_result(
                     execute_result, test)
@@ -169,11 +168,11 @@ class DriversThread(threading.Thread):
 
         # free environment
         if self.environment:
-            LOG.debug("thread %s free environment",
+            LOG.debug("Thread %s free environment",
                       execute_message.get_thread_id())
             Scheduler.__free_environment__(execute_message.get_environment())
 
-        LOG.debug("put thread %s result", self.thread_id)
+        LOG.debug("Put thread %s result", self.thread_id)
         self.message_queue.put(execute_message)
         LOG.info("")
 
@@ -188,7 +187,7 @@ class DriversThread(threading.Thread):
         from xdevice import Scheduler
         for device in self.environment.devices:
             if not getattr(device, ConfigConst.need_kit_setup, True):
-                LOG.debug("device %s need kit setup is false" % device)
+                LOG.debug("Device %s need kit setup is false" % device)
                 continue
 
             # do task setup for device
@@ -204,10 +203,10 @@ class DriversThread(threading.Thread):
                         SyntaxError, AttributeError) as exception:
                     error_no = getattr(exception, "error_no", "00000")
                     LOG.exception(
-                        "task setup device: %s, exception: %s" % (
+                        "Task setup device: %s, exception: %s" % (
                             self.environment.__get_serial__(),
                             exception), exc_info=False, error_no=error_no)
-            LOG.debug("set device %s need kit setup to false" % device)
+            LOG.debug("Set device %s need kit setup to false" % device)
             setattr(device, ConfigConst.need_kit_setup, False)
 
         # set product_info to self.task
@@ -215,7 +214,7 @@ class DriversThread(threading.Thread):
                 getattr(self.task, ConfigConst.product_info, ""):
             product_info = getattr(driver_request, ConfigConst.product_info)
             if not isinstance(product_info, dict):
-                LOG.warning("product info should be dict, %s",
+                LOG.warning("Product info should be dict, %s",
                             product_info)
                 return
             setattr(self.task, ConfigConst.product_info, product_info)
@@ -250,7 +249,7 @@ class DriversThread(threading.Thread):
                 setattr(config, "testargs", test_args)
 
         for listener in self.listeners:
-            LOG.debug("thread id %s, listener %s" % (self.thread_id, listener))
+            LOG.debug("Thread id %s, listener %s" % (self.thread_id, listener))
         driver_request = Request(self.thread_id, root_desc, self.listeners,
                                  config)
         execute_message.set_request(driver_request)
@@ -263,12 +262,20 @@ class DriversThread(threading.Thread):
         params = ResultReporter.get_task_info_params(history_report_path)
         if not params:
             return unpassed_test_params
-
-        failed_list = params[3].get(module_name, [])
+        failed_list = []
+        try:
+            from devicetest.agent.decc import Handler
+            if Handler.DAV.retry_select:
+                for i in Handler.DAV.case_id_list:
+                    failed_list.append(i + "#" + i)
+            else:
+                failed_list = params[3].get(module_name, [])
+        except:
+            failed_list = params[3].get(module_name, [])
         if not failed_list:
             failed_list = params[3].get(str(module_name).split(".")[0], [])
         unpassed_test_params.extend(failed_list)
-        LOG.debug("get unpassed test params %s", unpassed_test_params)
+        LOG.debug("Get unpassed test params %s", unpassed_test_params)
         return unpassed_test_params
 
     @classmethod
@@ -305,7 +312,7 @@ class DriversThread(threading.Thread):
                 target_execute_result = os.path.join(result_dir,
                                                      execute_result_name)
                 shutil.copyfile(history_execute_result, target_execute_result)
-                LOG.info("copy %s to %s" % (history_execute_result,
+                LOG.info("Copy %s to %s" % (history_execute_result,
                                             target_execute_result))
                 return target_execute_result
 
@@ -315,10 +322,10 @@ class DriversThread(threading.Thread):
         testsuites_element = DataHelper.parse_data_report(real_execute_result)
         if self._is_empty_report(testsuites_element):
             if check_mode(ModeType.decc):
-                LOG.info("empty report no need to inherit history execute"
+                LOG.info("Empty report no need to inherit history execute"
                          " result")
             else:
-                LOG.info("empty report '%s' no need to inherit history execute"
+                LOG.info("Empty report '%s' no need to inherit history execute"
                          " result", history_execute_result)
             return execute_result
 
@@ -328,12 +335,12 @@ class DriversThread(threading.Thread):
         history_testsuites_element = DataHelper.parse_data_report(
             real_history_execute_result)
         if self._is_empty_report(history_testsuites_element):
-            LOG.info("history report '%s' is empty", history_execute_result)
+            LOG.info("History report '%s' is empty", history_execute_result)
             return execute_result
         if check_mode(ModeType.decc):
-            LOG.info("inherit history execute result")
+            LOG.info("Inherit history execute result")
         else:
-            LOG.info("inherit history execute result: %s",
+            LOG.info("Inherit history execute result: %s",
                      history_execute_result)
         self._inherit_element(history_testsuites_element, testsuites_element)
 
@@ -437,7 +444,7 @@ class DriversThread(threading.Thread):
     @classmethod
     def _get_real_execute_result(cls, execute_result):
         from xdevice import SuiteReporter
-        LOG.debug("get_real_execute_result length is: %s" %
+        LOG.debug("Get real execute result length is: %s" %
                   len(SuiteReporter.get_report_result()))
         if check_mode(ModeType.decc):
             for suite_report, report_result in \
@@ -453,7 +460,7 @@ class DriversThread(threading.Thread):
     def _get_real_history_execute_result(cls, history_execute_result,
                                          module_name):
         from xdevice import SuiteReporter
-        LOG.debug("get_real_history_execute_result: %s" %
+        LOG.debug("Get real history execute result: %s" %
                   SuiteReporter.history_report_result)
         if check_mode(ModeType.decc):
             virtual_report_path, report_result = SuiteReporter. \
@@ -461,6 +468,147 @@ class DriversThread(threading.Thread):
             return report_result
         else:
             return history_execute_result
+
+
+class DriversDryRunThread(threading.Thread):
+    def __init__(self, test_driver, task, environment, message_queue):
+        threading.Thread.__init__(self)
+        self.test_driver = test_driver
+        self.listeners = None
+        self.task = task
+        self.environment = environment
+        self.message_queue = message_queue
+        self.thread_id = None
+        self.error_message = ""
+
+    def set_thread_id(self, thread_id):
+        self.thread_id = thread_id
+
+    def run(self):
+        from xdevice import Scheduler
+        LOG.debug("Thread id: %s start" % self.thread_id)
+        start_time = time.time()
+        execute_message = ExecuteMessage('', self.environment,
+                                         self.test_driver, self.thread_id)
+        driver, test = None, None
+        try:
+            if self.test_driver and Scheduler.is_execute:
+                # construct params
+                driver, test = self.test_driver
+                driver_request = self._get_driver_request(test,
+                                                          execute_message)
+                if driver_request is None:
+                    return
+
+                # setup device
+                self._do_task_setup(driver_request)
+
+                # driver execute
+                self.reset_device(driver_request.config)
+                driver.__dry_run_execute__(driver_request)
+
+        except Exception as exception:
+            error_no = getattr(exception, "error_no", "00000")
+            if self.environment is None:
+                LOG.exception("Exception: %s", exception, exc_info=False,
+                              error_no=error_no)
+            else:
+                LOG.exception(
+                    "Device: %s, exception: %s" % (
+                        self.environment.__get_serial__(), exception),
+                    exc_info=False, error_no=error_no)
+            self.error_message = "{}: {}".format(
+                get_instance_name(exception), str(exception))
+
+        finally:
+            self._handle_finally(driver, execute_message, start_time, test)
+
+    @staticmethod
+    def reset_device(config):
+        if getattr(config, "reboot_per_module", False):
+            for device in config.environment.devices:
+                device.reboot()
+
+    def _handle_finally(self, driver, execute_message, start_time, test):
+        from xdevice import Scheduler
+        # output execute time
+        end_time = time.time()
+        execute_time = VisionHelper.get_execute_time(int(
+            end_time - start_time))
+        source_content = self.test_driver[1].source.source_file or \
+                         self.test_driver[1].source.source_string
+        LOG.info("Executed: %s, Execution Time: %s" % (
+            source_content, execute_time))
+
+        # set execute state
+        if self.error_message:
+            execute_message.set_state(ExecuteMessage.DEVICE_ERROR)
+        else:
+            execute_message.set_state(ExecuteMessage.DEVICE_FINISH)
+
+        # free environment
+        if self.environment:
+            LOG.debug("Thread %s free environment",
+                      execute_message.get_thread_id())
+            Scheduler.__free_environment__(execute_message.get_environment())
+
+        LOG.debug("Put thread %s result", self.thread_id)
+        self.message_queue.put(execute_message)
+
+    def _do_task_setup(self, driver_request):
+        if check_mode(ModeType.decc) or getattr(
+                driver_request.config, ConfigConst.check_device, False):
+            return
+
+        if self.environment is None:
+            return
+
+        from xdevice import Scheduler
+        for device in self.environment.devices:
+            if not getattr(device, ConfigConst.need_kit_setup, True):
+                LOG.debug("Device %s need kit setup is false" % device)
+                continue
+
+            # do task setup for device
+            kits_copy = copy.deepcopy(self.task.config.kits)
+            setattr(device, ConfigConst.task_kits, kits_copy)
+            for kit in getattr(device, ConfigConst.task_kits, []):
+                if not Scheduler.is_execute:
+                    break
+                try:
+                    kit.__setup__(device, request=driver_request)
+                except (ParamError, ExecuteTerminate, DeviceError,
+                        LiteDeviceError, ValueError, TypeError,
+                        SyntaxError, AttributeError) as exception:
+                    error_no = getattr(exception, "error_no", "00000")
+                    LOG.exception(
+                        "Task setup device: %s, exception: %s" % (
+                            self.environment.__get_serial__(),
+                            exception), exc_info=False, error_no=error_no)
+            LOG.debug("Set device %s need kit setup to false" % device)
+            setattr(device, ConfigConst.need_kit_setup, False)
+
+        # set product_info to self.task
+        if getattr(driver_request, ConfigConst.product_info, "") and not \
+                getattr(self.task, ConfigConst.product_info, ""):
+            product_info = getattr(driver_request, ConfigConst.product_info)
+            if not isinstance(product_info, dict):
+                LOG.warning("Product info should be dict, %s",
+                            product_info)
+                return
+            setattr(self.task, ConfigConst.product_info, product_info)
+
+    def _get_driver_request(self, root_desc, execute_message):
+        config = Config()
+        config.update(copy.deepcopy(self.task.config).__dict__)
+        config.environment = self.environment
+        if self.listeners:
+            for listener in self.listeners:
+                LOG.debug("Thread id %s, listener %s" % (self.thread_id, listener))
+        driver_request = Request(self.thread_id, root_desc, self.listeners,
+                                 config)
+        execute_message.set_request(driver_request)
+        return driver_request
 
 
 class QueueMonitorThread(threading.Thread):
@@ -473,7 +621,7 @@ class QueueMonitorThread(threading.Thread):
 
     def run(self):
         from xdevice import Scheduler
-        LOG.debug("queue monitor thread start")
+        LOG.debug("Queue monitor thread start")
         while self.test_drivers or self.current_driver_threads:
             if not self.current_driver_threads:
                 time.sleep(3)
@@ -483,18 +631,18 @@ class QueueMonitorThread(threading.Thread):
             self.current_driver_threads.pop(execute_message.get_thread_id())
 
             if execute_message.get_state() == ExecuteMessage.DEVICE_FINISH:
-                LOG.debug("thread id: %s execute finished" %
+                LOG.debug("Thread id: %s execute finished" %
                           execute_message.get_thread_id())
             elif execute_message.get_state() == ExecuteMessage.DEVICE_ERROR:
-                LOG.debug("thread id: %s execute error" %
+                LOG.debug("Thread id: %s execute error" %
                           execute_message.get_thread_id())
 
             if Scheduler.upload_address:
                 Scheduler.upload_module_result(execute_message)
 
-        LOG.debug("queue monitor thread end")
+        LOG.debug("Queue monitor thread end")
         if not Scheduler.is_execute:
-            LOG.info("terminate success")
+            LOG.info("Terminate success")
             Scheduler.terminate_result.put("terminate success")
 
 

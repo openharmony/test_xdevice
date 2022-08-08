@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,6 +22,7 @@ import os
 import queue
 import time
 import uuid
+import shutil
 from xml.etree import ElementTree
 
 from _core.utils import unique_id
@@ -56,8 +57,10 @@ from _core.constants import DeviceLabelType
 from _core.constants import SchedulerType
 from _core.constants import ListenerType
 from _core.constants import ConfigConst
+from _core.constants import HostDrivenTestType
 from _core.executor.concurrent import DriversThread
 from _core.executor.concurrent import QueueMonitorThread
+from _core.executor.concurrent import DriversDryRunThread
 from _core.executor.source import TestSetSource
 from _core.executor.source import find_test_descriptors
 from _core.executor.source import find_testdict_descriptors
@@ -70,6 +73,8 @@ from _core.logger import remove_encrypt_file_handler
 
 __all__ = ["Scheduler"]
 LOG = platform_logger("Scheduler")
+
+MAX_VISIBLE_LENGTH = 150
 
 
 @Plugin(type=Plugin.SCHEDULER, id=SchedulerType.scheduler)
@@ -92,9 +97,10 @@ class Scheduler(object):
     max_command_num = 50
     # the number of tests in current task
     test_number = 0
+    device_labels = []
 
     def __discover__(self, args):
-        """discover task to execute"""
+        """Discover task to execute"""
         config = Config()
         config.update(args)
         task = Task(drivers=[])
@@ -137,11 +143,16 @@ class Scheduler(object):
             self.test_number = len(task.test_drivers)
 
             if task.config.exectype == TestExecType.device_test:
-                self._device_test_execute(task)
+                if not hasattr(task.config, "dry_run") or \
+                        not task.config.dry_run or \
+                        (task.config.dry_run and task.config.retry):
+                    self._device_test_execute(task)
+                else:
+                    self._dry_run_device_test_execute(task)
             elif task.config.exectype == TestExecType.host_test:
                 self._host_test_execute(task)
             else:
-                LOG.info("exec type %s is bypassed" % task.config.exectype)
+                LOG.info("Exec type %s is bypassed" % task.config.exectype)
 
         except (ParamError, ValueError, TypeError, SyntaxError, AttributeError,
                 DeviceError, LiteDeviceError, ExecuteTerminate) as exception:
@@ -149,10 +160,11 @@ class Scheduler(object):
             error_message = "%s[%s]" % (str(exception), error_no) \
                 if error_no else str(exception)
             error_no = error_no if error_no else "00000"
-            LOG.exception(exception, exc_info=True, error_no=error_no)
+            LOG.exception(exception, exc_info=False, error_no=error_no)
 
         finally:
             Scheduler._clear_test_dict_source()
+            self._reset_env()
             if getattr(task.config, ConfigConst.test_environment, "") or \
                     getattr(task.config, ConfigConst.configfile, ""):
                 self._restore_environment()
@@ -170,7 +182,7 @@ class Scheduler(object):
             self._generate_task_report(task, used_devices)
 
     def _host_test_execute(self, task):
-        """execute host test"""
+        """Execute host test"""
         try:
             # initial params
             current_driver_threads = {}
@@ -187,7 +199,7 @@ class Scheduler(object):
 
                 # clear remaining test drivers when scheduler is terminated
                 if not Scheduler.is_execute:
-                    LOG.info("clear test drivers")
+                    LOG.info("Clear test drivers")
                     self._clear_not_executed(task, test_drivers)
                     break
 
@@ -212,6 +224,65 @@ class Scheduler(object):
         finally:
             # generate reports
             self._generate_task_report(task)
+
+    def _dry_run_device_test_execute(self, task):
+        try:
+            # initial params
+            used_devices = {}
+            current_driver_threads = {}
+            test_drivers = task.test_drivers
+            message_queue = queue.Queue()
+            task_unused_env = []
+
+            # execute test drivers
+            queue_monitor_thread = self._start_queue_monitor(
+                message_queue, test_drivers, current_driver_threads)
+            while test_drivers:
+                # clear remaining test drivers when scheduler is terminated
+                if not Scheduler.is_execute:
+                    LOG.info("Clear test drivers")
+                    self._clear_not_executed(task, test_drivers)
+                    break
+
+                # get test driver and device
+                test_driver = test_drivers[0]
+                # get environment
+                try:
+                    environment = self.__allocate_environment__(
+                        task.config.__dict__, test_driver)
+                except DeviceError as exception:
+                    self._handle_device_error(exception, task, test_drivers)
+                    continue
+
+                if not Scheduler.is_execute:
+                    if environment:
+                        Scheduler.__free_environment__(environment)
+                    continue
+
+                # start driver thread
+                thread_id = self._get_thread_id(current_driver_threads)
+                driver_thread = DriversDryRunThread(test_driver, task, environment,
+                                              message_queue)
+                driver_thread.setDaemon(True)
+                driver_thread.set_thread_id(thread_id)
+                driver_thread.start()
+                current_driver_threads.setdefault(thread_id, driver_thread)
+
+                test_drivers.pop(0)
+
+            # wait for all drivers threads finished and do kit teardown
+            while True:
+                if not queue_monitor_thread.is_alive():
+                    break
+                time.sleep(3)
+
+            self._do_taskkit_teardown(used_devices, task_unused_env)
+        finally:
+            LOG.debug("Removing report_path: {}".format(task.config.report_path))
+            # delete reports
+            self.stop_task_logcat()
+            self.stop_encrypt_log()
+            shutil.rmtree(task.config.report_path)
 
     def _generate_task_report(self, task, used_devices=None):
         task_info = ExecInfo()
@@ -267,16 +338,24 @@ class Scheduler(object):
     @staticmethod
     def _find_device_options(environment_config, options, test_source):
         devices_option = []
+        index = 1
         for device_dict in environment_config:
             label = device_dict.get("label", "")
+            required_manager = device_dict.get("type", "device")
+            required_manager = \
+                required_manager if required_manager else "device"
             if not label:
                 continue
             device_option = DeviceSelectionOption(options, label, test_source)
             device_dict.pop("type", None)
             device_dict.pop("label", None)
+            device_option.required_manager = required_manager
             device_option.extend_value = device_dict
-            device_option.source_file = test_source.config_file or \
-                                        test_source.source_string
+            device_option.source_file = \
+                test_source.config_file or test_source.source_string
+            if hasattr(device_option, "env_index"):
+                device_option.env_index = index
+            index += 1
             devices_option.append(device_option)
         return devices_option
 
@@ -298,6 +377,10 @@ class Scheduler(object):
                 if env_manager.check_device_exist(device_options):
                     continue
                 else:
+                    LOG.debug("'%s' required %s devices, actually %s devices"
+                              " were found" % (test_driver[1].source.test_name,
+                                               len(device_options),
+                                               len(environment.devices)))
                     raise DeviceError("The '%s' required device does not exist"
                                       % test_driver[1].source.source_file,
                                       error_no="00104")
@@ -308,35 +391,28 @@ class Scheduler(object):
     def get_device_options(cls, options, test_source):
         device_options = []
         config_file = test_source.config_file
-
+        environment_config = []
         from _core.testkit.json_parser import JsonParser
         if test_source.source_string and is_config_str(
                 test_source.source_string):
             json_config = JsonParser(test_source.source_string)
+            environment_config = json_config.get_environment()
             device_options = cls._find_device_options(
-                json_config.get_environment(), options, test_source)
+                environment_config, options, test_source)
         elif config_file and os.path.exists(config_file):
             json_config = JsonParser(test_source.config_file)
+            environment_config = json_config.get_environment()
             device_options = cls._find_device_options(
-                json_config.get_environment(), options, test_source)
+                environment_config, options, test_source)
 
-        if not device_options:
-            if str(test_source.source_file).endswith(".bin"):
-                device_option = DeviceSelectionOption(
-                    options, DeviceLabelType.ipcamera, test_source)
-            else:
-                device_option = DeviceSelectionOption(
-                    options, None, test_source)
-            device_option.source_file = test_source.source_file or \
-                                        test_source.source_string
-            device_options.append(device_option)
+        device_options = cls._calculate_device_options(
+            device_options, environment_config, options, test_source)
 
         if ConfigConst.component_mapper in options.keys():
             required_component = options.get(ConfigConst.component_mapper). \
                 get(test_source.module_name, None)
             for device_option in device_options:
                 device_option.required_component = required_component
-
         return device_options
 
     @staticmethod
@@ -344,32 +420,23 @@ class Scheduler(object):
         env_manager = EnvironmentManager()
         env_manager.release_environment(environment)
 
-    def _check_device_spt(self, kit, driver_request, device):
-        kit_version = self._parse_version_id(driver_request, kit)
-        kit_spt = kit.properties.get(ConfigConst.spt, None)
-        if not kit_spt or not kit_version:
+    @classmethod
+    def _check_device_spt(cls, kit, driver_request, device):
+        kit_spt = cls._parse_property_value(ConfigConst.spt,
+                                            driver_request, kit)
+        if not kit_spt:
             setattr(device, ConfigConst.task_state, False)
-            LOG.error("spt or version is empty", error_no="00108")
+            LOG.error("Spt is empty", error_no="00108")
             return
         if getattr(driver_request, ConfigConst.product_info, ""):
             product_info = getattr(driver_request,
                                    ConfigConst.product_info)
             if not isinstance(product_info, dict):
-                LOG.warning("product info should be dict, %s",
+                LOG.warning("Product info should be dict, %s",
                             product_info)
                 setattr(device, ConfigConst.task_state, False)
                 return
             device_spt = product_info.get("Security Patch", None)
-            device_version = product_info.get("VersionID", None)
-            if not device_version or not device_version == kit_version:
-                LOG.error("The device %s VersionID is %s, "
-                          "and the test case version is %s, "
-                          "which does not meet the requirements" %
-                          (device.device_sn, device_version, kit_version),
-                          error_no="00116")
-                setattr(device, ConfigConst.task_state, False)
-                return
-
             if not device_spt or not \
                     Scheduler.compare_spt_time(kit_spt, device_spt):
                 LOG.error("The device %s spt is %s, "
@@ -377,7 +444,6 @@ class Scheduler(object):
                           "which does not meet the requirements" %
                           (device.device_sn, device_spt, kit_spt),
                           error_no="00116")
-
                 setattr(device, ConfigConst.task_state, False)
                 return
 
@@ -392,7 +458,7 @@ class Scheduler(object):
 
         for device in environment.devices:
             if not getattr(device, ConfigConst.need_kit_setup, True):
-                LOG.debug("device %s need kit setup is false" % device)
+                LOG.debug("Device %s need kit setup is false" % device)
                 continue
 
             # do task setup for device
@@ -408,12 +474,13 @@ class Scheduler(object):
                         SyntaxError, AttributeError) as exception:
                     error_no = getattr(exception, "error_no", "00000")
                     LOG.exception(
-                        "task setup device: %s, exception: %s" % (
+                        "Task setup device: %s, exception: %s" % (
                             environment.__get_serial__(),
                             exception), exc_info=False, error_no=error_no)
-                if kit.__class__.__name__ == CKit.query:
+                if kit.__class__.__name__ == CKit.query and \
+                        device.label in [DeviceLabelType.ipcamera]:
                     self._check_device_spt(kit, driver_request, device)
-            LOG.debug("set device %s need kit setup to false" % device)
+            LOG.debug("Set device %s need kit setup to false" % device)
             setattr(device, ConfigConst.need_kit_setup, False)
 
         for device in environment.devices:
@@ -425,7 +492,7 @@ class Scheduler(object):
                 not getattr(task, ConfigConst.product_info, ""):
             product_info = getattr(driver_request, ConfigConst.product_info)
             if not isinstance(product_info, dict):
-                LOG.warning("product info should be dict, %s",
+                LOG.warning("Product info should be dict, %s",
                             product_info)
             else:
                 setattr(task, ConfigConst.product_info, product_info)
@@ -444,7 +511,7 @@ class Scheduler(object):
         while test_drivers:
             # clear remaining test drivers when scheduler is terminated
             if not Scheduler.is_execute:
-                LOG.info("clear test drivers")
+                LOG.info("Clear test drivers")
                 self._clear_not_executed(task, test_drivers)
                 break
 
@@ -481,7 +548,7 @@ class Scheduler(object):
 
             if check_mode(ModeType.decc) or getattr(
                     task.config, ConfigConst.check_device, False):
-                LOG.info("start to check environment: %s" %
+                LOG.info("Start to check environment: %s" %
                          environment.__get_serial__())
                 status = self._decc_task_setup(environment, task)
                 if not status:
@@ -494,7 +561,7 @@ class Scheduler(object):
                     test_drivers.pop(0)
                     continue
                 else:
-                    LOG.info("environment %s check success",
+                    LOG.info("Environment %s check success",
                              environment.__get_serial__())
 
             # display executing progress
@@ -526,7 +593,7 @@ class Scheduler(object):
             history_report_path)
 
         if not params or not params[4]:
-            LOG.debug("task info record data reports is empty")
+            LOG.debug("Task info record data reports is empty")
             return
 
         report_data_dict = dict(params[4])
@@ -541,14 +608,13 @@ class Scheduler(object):
         if check_mode(ModeType.decc):
             virtual_report_path, report_result = SuiteReporter. \
                 get_history_result_by_module(module_name)
-            LOG.debug("append history result: (%s, %s)" % (
+            LOG.debug("Append history result: (%s, %s)" % (
                 virtual_report_path, report_result))
             SuiteReporter.append_report_result(
                 (virtual_report_path, report_result))
         else:
-            import shutil
             history_execute_result = report_data_dict.get(module_name, "")
-            LOG.info("start copy %s" % history_execute_result)
+            LOG.info("Start copy %s" % history_execute_result)
             file_name = get_filename_extension(history_execute_result)[0]
             if os.path.exists(history_execute_result):
                 result_dir = \
@@ -557,10 +623,10 @@ class Scheduler(object):
                 target_execute_result = "%s.xml" % os.path.join(
                     task.config.report_path, "result", file_name)
                 shutil.copyfile(history_execute_result, target_execute_result)
-                LOG.info("copy %s to %s" % (
+                LOG.info("Copy %s to %s" % (
                     history_execute_result, target_execute_result))
             else:
-                error_msg = "copy failed! %s not exists!" % \
+                error_msg = "Copy failed! %s not exists!" % \
                             history_execute_result
                 raise ParamError(error_msg)
 
@@ -585,7 +651,7 @@ class Scheduler(object):
             test_drivers.clear()
             return
         # The result is reported only in DECC mode, and also clear all.
-        LOG.error("case no run: task execution terminated!", error_no="00300")
+        LOG.error("Case no run: task execution terminated!", error_no="00300")
         error_message = "Execute Terminate[00300]"
         cls.report_not_executed(task.config.report_path, test_drivers,
                                 error_message)
@@ -639,7 +705,7 @@ class Scheduler(object):
                 try:
                     kit.__teardown__(device)
                 except Exception as error:
-                    LOG.debug("do taskkit teardown: %s" % error)
+                    LOG.debug("Do task kit teardown: %s" % error)
             setattr(device, ConfigConst.task_kits, [])
             setattr(device, ConfigConst.need_kit_setup, True)
 
@@ -676,10 +742,11 @@ class Scheduler(object):
 
     @classmethod
     def _append_used_devices(cls, environment, used_devices):
-        for device in environment.devices:
-            device_serial = device.__get_serial__() if device else "None"
-            if device_serial and device_serial not in used_devices.keys():
-                used_devices[device_serial] = device
+        if environment is not None:
+            for device in environment.devices:
+                device_serial = device.__get_serial__() if device else "None"
+                if device_serial and device_serial not in used_devices.keys():
+                    used_devices[device_serial] = device
 
     @staticmethod
     def _start_queue_monitor(message_queue, test_drivers,
@@ -703,7 +770,7 @@ class Scheduler(object):
                          TestExecType.host_driven_test]:
             self._exec_task(options)
         else:
-            LOG.error("unsupported execution type '%s'" % exec_type,
+            LOG.error("Unsupported execution type '%s'" % exec_type,
                       error_no="00100")
 
         return
@@ -724,7 +791,7 @@ class Scheduler(object):
                 Scheduler.upload_unavailable_result(str(exception.args))
                 Scheduler.upload_report_end()
         finally:
-            self.stop_task_log()
+            self.stop_task_logcat()
             self.stop_encrypt_log()
 
     @classmethod
@@ -738,6 +805,11 @@ class Scheduler(object):
         env_manager = EnvironmentManager()
         env_manager.env_stop()
         EnvironmentManager()
+
+    @classmethod
+    def _reset_env(cls):
+        env_manager = EnvironmentManager()
+        env_manager.env_reset()
 
     @classmethod
     def start_task_log(cls, log_path):
@@ -754,7 +826,7 @@ class Scheduler(object):
             add_encrypt_file_handler(encrypt_log_file)
 
     @classmethod
-    def stop_task_log(cls):
+    def stop_task_logcat(cls):
         remove_task_file_handler()
 
     @classmethod
@@ -768,8 +840,8 @@ class Scheduler(object):
             Scheduler._pre_component_test(config)
 
         if getattr(config, ConfigConst.subsystems, "") or \
-                getattr(config, ConfigConst.parts, "") \
-                or getattr(config, ConfigConst.component_base_kit, ""):
+                getattr(config, ConfigConst.parts, "") or \
+                getattr(config, ConfigConst.component_base_kit, ""):
             uid = unique_id("Scheduler", "component")
             if config.subsystems or config.parts:
                 test_set = (config.subsystems, config.parts)
@@ -780,10 +852,10 @@ class Scheduler(object):
             root = Descriptor(uuid=uid, name="component",
                               source=TestSetSource(test_set),
                               container=True)
+
             root.children = find_test_descriptors(config)
             return root
-
-        # read test list from testdict
+            # read test list from testdict
         if getattr(config, ConfigConst.testdict, "") != "" and getattr(
                 config, ConfigConst.testfile, "") == "":
             uid = unique_id("Scheduler", "testdict")
@@ -793,11 +865,15 @@ class Scheduler(object):
             root.children = find_testdict_descriptors(config)
             return root
 
-        # read test list from testfile, testlist or task
+            # read test list from testfile, testlist or task
         test_set = getattr(config, ConfigConst.testfile, "") or getattr(
             config, ConfigConst.testlist, "") or getattr(
             config, ConfigConst.task, "") or getattr(
             config, ConfigConst.testcase)
+        # read test list from testfile, testlist or task
+        test_set = getattr(config, "testfile", "") or getattr(
+            config, "testlist", "") or getattr(config, "task", "") or getattr(
+            config, "testcase")
         if test_set:
             fname, _ = get_filename_extension(test_set)
             uid = unique_id("Scheduler", fname)
@@ -812,7 +888,7 @@ class Scheduler(object):
     @classmethod
     def terminate_cmd_exec(cls):
         Scheduler.is_execute = False
-        LOG.info("start to terminate execution")
+        LOG.info("Start to terminate execution")
         return Scheduler.terminate_result.get()
 
     @classmethod
@@ -821,18 +897,16 @@ class Scheduler(object):
             return
         case_id, result, error, start_time, end_time, report_path = \
             upload_param
-        if error and len(error) > 150:
-            error = "%s..." % error[:150]
+        if error and len(error) > MAX_VISIBLE_LENGTH:
+            error = "%s..." % error[:MAX_VISIBLE_LENGTH]
         LOG.info(
-            "get upload params: %s, %s, %s, %s, %s, %s" % (
+            "Get upload params: %s, %s, %s, %s, %s, %s" % (
                 case_id, result, error, start_time, end_time, report_path))
-        if Scheduler.proxy:
-            Scheduler.proxy.upload_result(case_id, result, error,
-                                          start_time, end_time, report_path)
-            return
-        from agent.factory import upload_result
-        upload_result(case_id, result, error, start_time, end_time,
-                      report_path)
+        if Scheduler.proxy is not None:
+            Scheduler.proxy.upload_result(case_id, result, error, start_time,
+                                          end_time, report_path)
+        else:
+            LOG.debug("There is no proxy, can't upload case result")
 
     @classmethod
     def upload_module_result(cls, exec_message):
@@ -847,14 +921,14 @@ class Scheduler(object):
             return
 
         test_type = request.root.source.test_type
-        LOG.info("need upload result: %s, test type: %s" %
+        LOG.info("Need upload result: %s, test type: %s" %
                  (result_file, test_type))
         upload_params, _, _ = cls._get_upload_params(result_file, request)
         if not upload_params:
             LOG.error("%s no test case result to upload" % result_file,
                       error_no="00201")
             return
-        LOG.info("need upload %s case" % len(upload_params))
+        LOG.info("Need upload %s case" % len(upload_params))
         upload_suite = []
         for upload_param in upload_params:
             case_id, result, error, start_time, end_time, report_path = \
@@ -862,44 +936,48 @@ class Scheduler(object):
             case = {"caseid": case_id, "result": result, "error": error,
                     "start": start_time, "end": end_time,
                     "report": report_path}
-            LOG.info("case info: %s", case)
+            LOG.info("Case info: %s", case)
             upload_suite.append(case)
-        if Scheduler.proxy:
-            Scheduler.proxy.upload_result(case_id, result, error,
-                                          start_time, end_time, report_path)
-            return
-        from agent.factory import upload_batch
-        upload_batch(upload_suite)
+        if Scheduler.proxy is not None:
+            Scheduler.proxy.upload_batch(upload_suite)
+        else:
+            LOG.debug("There is no proxy, can't upload module result")
 
     @classmethod
     def _get_upload_params(cls, result_file, request):
         upload_params = []
-
         report_path = result_file
-        task_log_path = os.path.join(request.config.report_path, "log",
-                                     "task_log.log")
         testsuites_element = DataHelper.parse_data_report(report_path)
         start_time, end_time = cls._get_time(testsuites_element)
-
-        for testsuite_element in testsuites_element:
-            if check_mode(ModeType.developer):
-                module_name = str(get_filename_extension(
-                    report_path)[0]).split(".")[0]
-            else:
-                module_name = testsuite_element.get(ReportConstant.name,
-                                                    "none")
-            for case_element in testsuite_element:
-                case_id = cls._get_case_id(case_element, module_name)
-                case_result, error = cls._get_case_result(case_element)
-                if error and len(error) > 150:
-                    error = "%s..." % error[:150]
-                if case_result == "Ignored":
-                    LOG.info("get upload params: %s result is ignored",
-                             case_id)
-                    continue
+        if request.get_test_type() == HostDrivenTestType.device_test:
+            for model_element in testsuites_element:
+                case_id = model_element.get(ReportConstant.name, "")
+                case_result, error = cls.get_script_result(model_element)
+                if error and len(error) > MAX_VISIBLE_LENGTH:
+                    error = "$s..." % error[:MAX_VISIBLE_LENGTH]
                 upload_params.append(
                     (case_id, case_result, error, start_time,
-                     end_time, task_log_path))
+                     end_time, request.config.report_path,))
+        else:
+            for testsuite_element in testsuites_element:
+                if check_mode(ModeType.developer):
+                    module_name = str(get_filename_extension(
+                        report_path)[0]).split(".")[0]
+                else:
+                    module_name = testsuite_element.get(ReportConstant.name,
+                                                        "none")
+                for case_element in testsuite_element:
+                    case_id = cls._get_case_id(case_element, module_name)
+                    case_result, error = cls._get_case_result(case_element)
+                    if error and len(error) > MAX_VISIBLE_LENGTH:
+                        error = "%s..." % error[:MAX_VISIBLE_LENGTH]
+                    if case_result == "Ignored":
+                        LOG.info("Get upload params: %s result is ignored",
+                                 case_id)
+                        continue
+                    upload_params.append(
+                        (case_id, case_result, error, start_time,
+                         end_time, request.config.report_path,))
         return upload_params, start_time, end_time
 
     @classmethod
@@ -982,14 +1060,14 @@ class Scheduler(object):
                         end_time = int(time.mktime(time.strptime(
                             timestamp, ReportConstant.time_format)) * 1000)
                     except ArithmeticError as error:
-                        LOG.error("get time error %s" % error)
+                        LOG.error("Get time error %s" % error)
                         end_time = int(time.time() * 1000)
                     start_time = int(end_time - float(cost_time) * 1000)
                 else:
                     current_time = int(time.time() * 1000)
                     start_time, end_time = current_time, current_time
         except ArithmeticError as error:
-            LOG.error("get time error %s" % error)
+            LOG.error("Get time error %s" % error)
             current_time = int(time.time() * 1000)
             start_time, end_time = current_time, current_time
         return start_time, end_time
@@ -997,28 +1075,20 @@ class Scheduler(object):
     @classmethod
     def upload_task_result(cls, task, error_message=""):
         if not Scheduler.task_name:
-            LOG.info("no need upload summary report")
+            LOG.info("No need upload summary report")
             return
 
         summary_data_report = os.path.join(task.config.report_path,
                                            ReportConstant.summary_data_report)
-        summary_vision_report = os.path.join(
-            task.config.report_path, ReportConstant.summary_vision_report)
         if not os.path.exists(summary_data_report):
-            task_log_path = os.path.join(task.config.report_path, "log",
-                                         "task_log.log")
-            if not os.path.exists(task_log_path):
-                task_log_path = ""
             Scheduler.upload_unavailable_result(str(
-                error_message) or "summary report not exists", task_log_path)
+                error_message) or "summary report not exists",
+                                                task.config.report_path)
             return
 
         task_element = ElementTree.parse(summary_data_report).getroot()
         start_time, end_time = cls._get_time(task_element)
         task_result = cls._get_task_result(task_element)
-        if task_result == "Unavailable":
-            summary_vision_report = os.path.join(task.config.report_path,
-                                                 "log", "task_log.log")
         error_msg = ""
         for child in task_element:
             if child.get(ReportConstant.message, ""):
@@ -1028,7 +1098,7 @@ class Scheduler(object):
             error_msg = error_msg[:-1]
         cls.upload_case_result((Scheduler.task_name, task_result,
                                 error_msg, start_time, end_time,
-                                summary_vision_report))
+                                task.config.report_path))
 
     @classmethod
     def _get_task_result(cls, task_element):
@@ -1055,12 +1125,14 @@ class Scheduler(object):
 
     @classmethod
     def upload_report_end(cls):
+        if getattr(cls, "tmp_json", None):
+            os.remove(cls.tmp_json)
+            del cls.tmp_json
         LOG.info("Upload report end")
         if Scheduler.proxy is not None:
             Scheduler.proxy.report_end()
-            return
-        from agent.factory import report_end
-        report_end()
+        else:
+            LOG.debug("There is no proxy, can't upload report end")
 
     @classmethod
     def is_module_need_retry(cls, task, module_name):
@@ -1095,33 +1167,57 @@ class Scheduler(object):
                 "-".join(kit_time), "%Y-%m")
             d_spt = datetime.datetime.strptime("-".join(device_time), "%Y-%m")
         except ValueError as value_error:
-            LOG.debug("date format is error, %s" % value_error.args)
+            LOG.debug("Date format is error, %s" % value_error.args)
             return False
         month_interval = int(k_spt.month) - int(d_spt.month)
         year_interval = int(k_spt.year) - int(d_spt.year)
-        LOG.debug("kit spt (year=%s, month=%s), device spt (year=%s, month=%s)"
+        LOG.debug("Kit spt (year=%s, month=%s), device spt (year=%s, month=%s)"
                   % (k_spt.year, k_spt.month, d_spt.year, d_spt.month))
-        if year_interval == 0 and month_interval in (0, 1, 2):
+        if year_interval < 0:
+            return True
+        if year_interval == 0 and month_interval in range(-11, 3):
             return True
         if year_interval == 1 and month_interval + 12 in (1, 2):
             return True
 
     @classmethod
-    def _parse_version_id(cls, driver_request, kit):
+    def _parse_property_value(cls, property_name, driver_request, kit):
         test_args = copy.deepcopy(
             driver_request.config.get(ConfigConst.testargs, dict()))
-        version_id = ""
+        property_value = ""
         if ConfigConst.pass_through in test_args.keys():
             import json
             pt_dict = json.loads(test_args.get(ConfigConst.pass_through, ""))
-            version_id = pt_dict.get("VersionID", None)
-        elif "VersionID" in test_args.keys():
-            version_id = test_args.get("VersionID", None)
-        if version_id:
-            kit_version = version_id
+            property_value = pt_dict.get(property_name, None)
+        elif property_name in test_args.keys:
+            property_value = test_args.get(property_name, None)
+        return property_value if property_value else \
+            kit.properties.get(property_name, None)
+
+    @classmethod
+    def _calculate_device_options(cls, device_options, environment_config,
+                                  options, test_source):
+        # calculate difference
+        diff_value = len(environment_config) - len(device_options)
+        if device_options and diff_value == 0:
+            return device_options
+
         else:
-            kit_version = kit.properties.get(ConfigConst.version, None)
-        return kit_version
+            diff_value = diff_value if diff_value else 1
+            if str(test_source.source_file).endswith(".bin"):
+                device_option = DeviceSelectionOption(
+                    options, DeviceLabelType.ipcamera, test_source)
+            else:
+                device_option = DeviceSelectionOption(
+                    options, None, test_source)
+
+            device_option.source_file = \
+                test_source.source_file or test_source.source_string
+            device_option.required_manager = "device"
+            device_options.extend([device_option] * diff_value)
+            LOG.debug("Assign device options and it's length is %s"
+                      % len(device_options))
+        return device_options
 
     @classmethod
     def update_test_type_in_source(cls, key, value):

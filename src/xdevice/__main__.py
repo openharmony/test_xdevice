@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -15,17 +15,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
+import os
 import sys
-
 from xdevice import Console
 from xdevice import platform_logger
+from _core.utils import get_version
+
+
+srcpath = os.path.dirname(os.path.dirname(__file__))
+sys.path.append(srcpath)
 
 LOG = platform_logger("Main")
 
 
 def main_process(command=None):
-    LOG.info("*************** xDevice Test Framework Starting ***************")
+    LOG.info(
+        "*************** xDevice Test Framework %s Starting ***************" %
+        get_version())
     if command:
         args = str(command).split(" ")
         args.insert(0, "xDevice")

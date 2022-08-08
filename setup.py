@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -28,14 +28,13 @@ def main():
           package_dir={'': 'src'},
           packages=['xdevice',
                     'xdevice._core',
-                    'xdevice._core.build',
                     'xdevice._core.command',
                     'xdevice._core.config',
                     'xdevice._core.driver',
                     'xdevice._core.environment',
                     'xdevice._core.executor',
                     'xdevice._core.report',
-                    'xdevice._core.testkit',
+                    'xdevice._core.testkit'
                     ],
           package_data={
               'xdevice._core': [
