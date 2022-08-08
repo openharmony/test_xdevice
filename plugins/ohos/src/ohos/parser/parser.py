@@ -1223,7 +1223,7 @@ class OHJSUnitTestListParser(IParser):
         if "{" in line or "}" in line:
             self.json_str = "%s%s" % (self.json_str, line)
             return
-        if "user test finished." in line:
+        if "dry run finished" in line:
             suite_dict_list = json.loads(self.json_str).get("suites", [])
             for suite_dict in suite_dict_list:
                 for class_name, test_name_dict_list in suite_dict.items():
