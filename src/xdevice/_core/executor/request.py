@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -147,7 +147,7 @@ class Task:
         self.root = root
         self._init_driver(root)
         if not self.test_drivers:
-            LOG.error("no test driver to execute", error_no="00106")
+            LOG.error("No test driver to execute", error_no="00106")
 
     def _init_driver(self, test_descriptor):
         from xdevice import Scheduler
@@ -155,7 +155,6 @@ class Task:
         plugin_id = None
         source = test_descriptor.source
         ignore_test = ""
-
         if isinstance(source, TestSource):
             if source.test_type is not None:
                 plugin_id = source.test_type

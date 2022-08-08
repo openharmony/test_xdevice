@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -21,6 +21,7 @@ import hashlib
 
 from _core.logger import platform_logger
 from _core.exception import ParamError
+from _core.constants import FilePermission
 
 __all__ = ["check_pub_key_exist", "do_rsa_encrypt", "do_rsa_decrypt",
            "generate_key_file", "get_file_summary"]
@@ -140,7 +141,7 @@ def generate_key_file(length=2048):
         from rsa import key
 
         if int(length) not in [1024, 2048, 3072, 4096]:
-            LOG.error("length should be 1024, 2048, 3072 or 4096")
+            LOG.error("Length should be 1024, 2048, 3072 or 4096")
             return
 
         pub_key, pri_key = key.newkeys(int(length))
@@ -148,22 +149,22 @@ def generate_key_file(length=2048):
         pri_key_pem = pri_key.save_pkcs1().decode()
 
         file_pri_open = os.open("pri.key", os.O_WRONLY | os.O_CREAT |
-                                os.O_APPEND, 0o755)
+                                os.O_APPEND, FilePermission.mode_755)
         file_pub_open = os.open("pub.key", os.O_WRONLY | os.O_CREAT |
-                                os.O_APPEND, 0o755)
+                                os.O_APPEND, FilePermission.mode_755)
         with os.fdopen(file_pri_open, "w") as file_pri, \
                 os.fdopen(file_pub_open, "w") as file_pub:
             file_pri.write(pri_key_pem)
             file_pri.flush()
             file_pub.write(pub_key_pem)
             file_pub.flush()
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as _:
         return
 
 
 def get_file_summary(src_file, algorithm="sha256", buffer_size=100 * 1024):
     if not os.path.exists(src_file):
-        LOG.error("file '%s' not exists!" % src_file)
+        LOG.error("File '%s' not exists!" % src_file)
         return ""
 
     # if the size of file is large, use this function
@@ -181,12 +182,12 @@ def get_file_summary(src_file, algorithm="sha256", buffer_size=100 * 1024):
                 for data in _read_file(_file):
                     algorithm_object.update(data)
         except ValueError as error:
-            LOG.error("read data from '%s' error: %s " % (
+            LOG.error("Read data from '%s' error: %s " % (
                 src_file, error.args))
             return ""
         return algorithm_object.hexdigest()
     else:
-        LOG.error("the algorithm '%s' not in hashlib!" % algorithm)
+        LOG.error("The algorithm '%s' not in hashlib!" % algorithm)
         return ""
 
 

@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -50,6 +50,7 @@ class IDeviceManager(ABC):
     """
     __slots__ = ()
     support_labels = []
+    support_types = []
 
     @abstractmethod
     def apply_device(self, device_option, timeout=10):
@@ -73,6 +74,10 @@ class IDeviceManager(ABC):
     def env_stop(self):
         pass
 
+    @classmethod
+    def env_reset(self):
+        pass
+
     @abstractmethod
     def list_devices(self):
         pass
@@ -85,6 +90,7 @@ class IDevice(ABC):
     """
     __slots__ = ()
     extend_value = {}
+    env_index = None
 
     @abstractmethod
     def __set_serial__(self, device_sn=""):
@@ -124,16 +130,16 @@ class IDriver(ABC):
     @abstractmethod
     def __check_environment__(self, device_options):
         """
-        check environment correct or not.
-        you should return False when check failed.
+        Check environment correct or not.
+        You should return False when check failed.
         :param device_options:
         """
 
     @abstractmethod
     def __check_config__(self, config):
         """
-        check config correct or not.
-        you should raise exception when check failed.
+        Check config correct or not.
+        You should raise exception when check failed.
         :param config:
         """
         self.__check_failed__("Not implementation for __check_config__")
@@ -143,6 +149,13 @@ class IDriver(ABC):
         """
         Execute tests according to the request.
         """
+
+    @classmethod
+    def __dry_run_execute__(self, request):
+        """
+        Dry run tests according to the request.
+        """
+        pass
 
     @abstractmethod
     def __result__(self):
@@ -180,14 +193,14 @@ class IScheduler(ABC):
     @abstractmethod
     def __allocate_environment__(cls, options, test_driver):
         """
-        allocate_environment according to the request.
+        Allocate environment according to the request.
         """
 
     @classmethod
     @abstractmethod
     def __free_environment__(cls, environment):
         """
-        free environment to the request.
+        Free environment to the request.
         """
 
     @classmethod
@@ -252,7 +265,7 @@ class IListener(ABC):
 
 class IShellReceiver(ABC):
     """
-    read the output from shell out.
+    Read the output from shell out.
     """
     __slots__ = ()
 
@@ -310,8 +323,8 @@ class ITestKit(ABC):
     @abstractmethod
     def __check_config__(self, config):
         """
-        check config correct or not.
-        you should raise exception when check failed.
+        Check config correct or not.
+        You should raise exception when check failed.
         :param config:
         """
         self.__check_failed__("Not implementation for __check_config__")

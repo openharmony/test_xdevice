@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -96,51 +96,64 @@ def stop_standing_subprocess(process):
         os.kill(process.pid, signal_value)
     except (PermissionError, AttributeError, FileNotFoundError,
             SystemError) as error:
-        LOG.error("stop standing subprocess error '%s'" % error)
+        LOG.error("Stop standing subprocess error '%s'" % error)
 
 
 def get_decode(stream):
-    if isinstance(stream, str):
-        return stream
-
-    if not isinstance(stream, bytes):
-        return str(stream)
-
-    try:
-        ret = stream.decode("utf-8", errors="ignore")
-    except (ValueError, AttributeError, TypeError):
+    if not isinstance(stream, str) and not isinstance(stream, bytes):
         ret = str(stream)
+    else:
+        try:
+            ret = stream.decode("utf-8", errors="ignore")
+        except (ValueError, AttributeError, TypeError) as _:
+            ret = str(stream)
     return ret
 
 
 def is_proc_running(pid, name=None):
     if platform.system() == "Windows":
-        list_command = ["C:\\Windows\\System32\\tasklist"]
-        find_command = ["C:\\Windows\\System32\\findstr", "%s" % pid]
+        proc_sub = subprocess.Popen(["C:\\Windows\\System32\\tasklist"],
+                                    stdout=subprocess.PIPE,
+                                    shell=False)
+        proc = subprocess.Popen(["C:\\Windows\\System32\\findstr", "%s" % pid],
+                                stdin=proc_sub.stdout,
+                                stdout=subprocess.PIPE, shell=False)
+    elif platform.system() == "Linux":
+        # /bin/ps -ef | /bin/grep -v grep | /bin/grep -w pid
+        proc_sub = subprocess.Popen(["/bin/ps", "-ef"],
+                                    stdout=subprocess.PIPE,
+                                    shell=False)
+        proc_v_sub = subprocess.Popen(["/bin/grep", "-v", "grep"],
+                                      stdin=proc_sub.stdout,
+                                      stdout=subprocess.PIPE,
+                                      shell=False)
+        proc = subprocess.Popen(["/bin/grep", "-w", "%s" % pid],
+                                stdin=proc_v_sub.stdout,
+                                stdout=subprocess.PIPE, shell=False)
     elif platform.system() == "Darwin":
-        list_command = ["/bin/ps", "-ef"]
-        find_command = ["/usr/bin/grep", "%s" % pid]
+        proc_sub = subprocess.Popen(["/bin/ps", "-ef"],
+                                    stdout=subprocess.PIPE,
+                                    shell=False)
+        proc_v_sub = subprocess.Popen(["/usr/bin/grep", "-v", "grep"],
+                                      stdin=proc_sub.stdout,
+                                      stdout=subprocess.PIPE,
+                                      shell=False)
+        proc = subprocess.Popen(["/usr/bin/grep", "-w", "%s" % pid],
+                                stdin=proc_v_sub.stdout,
+                                stdout=subprocess.PIPE, shell=False)
     else:
-        list_command = ["/bin/ps", "-ef"]
-        find_command = ["/bin/grep", "%s" % pid]
-    proc = _get_find_proc(find_command, list_command)
+        raise Exception("Unknown system environment")
+
     (out, _) = proc.communicate()
     out = get_decode(out).strip()
+    LOG.debug("Check %s proc running output: %s", pid, out)
     if out == "":
         return False
     else:
         return True if name is None else out.find(name) != -1
 
 
-def _get_find_proc(find_command, list_command):
-    proc_sub = subprocess.Popen(list_command, stdout=subprocess.PIPE,
-                                shell=False)
-    proc = subprocess.Popen(find_command, stdin=proc_sub.stdout,
-                            stdout=subprocess.PIPE, shell=False)
-    return proc
-
-
-def exec_cmd(cmd, timeout=1 * 60, error_print=True, join_result=False):
+def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False, redirect=False):
     """
     Executes commands in a new shell. Directing stderr to PIPE.
 
@@ -152,22 +165,32 @@ def exec_cmd(cmd, timeout=1 * 60, error_print=True, join_result=False):
         timeout: timeout for exe cmd.
         error_print: print error output or not.
         join_result: join error and out
+        redirect: redirect output
     Returns:
         The output of the command run.
     """
+    # PIPE本身可容纳的量比较小，所以程序会卡死，所以一大堆内容输出过来的时候，会导致PIPE不足够处理这些内容，因此需要将输出内容定位到其他地方，例如临时文件等
+    import tempfile
+    out_temp = tempfile.SpooledTemporaryFile(max_size=10 * 1000)
+    fileno = out_temp.fileno()
 
     sys_type = platform.system()
-    if isinstance(cmd, list):
-        LOG.info("The running command is: {}".format(" ".join(cmd)))
-    if isinstance(cmd, str):
-        LOG.info("The running command is: {}".format(cmd))
     if sys_type == "Linux" or sys_type == "Darwin":
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, shell=False,
-                                preexec_fn=os.setsid)
+        if redirect:
+            proc = subprocess.Popen(cmd, stdout=fileno,
+                                    stderr=fileno, shell=False,
+                                    preexec_fn=os.setsid)
+        else:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, shell=False,
+                                    preexec_fn=os.setsid)
     else:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, shell=False)
+        if redirect:
+            proc = subprocess.Popen(cmd, stdout=fileno,
+                                    stderr=fileno, shell=False)
+        else:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, shell=False)
     try:
         (out, err) = proc.communicate(timeout=timeout)
         err = get_decode(err).strip()
@@ -180,7 +203,7 @@ def exec_cmd(cmd, timeout=1 * 60, error_print=True, join_result=False):
             return err if err else out
 
     except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,
-            EOFError, IOError, subprocess.TimeoutExpired):
+            EOFError, IOError) as _:
         sys_type = platform.system()
         if sys_type == "Linux" or sys_type == "Darwin":
             os.killpg(proc.pid, signal.SIGTERM)
@@ -201,7 +224,7 @@ def create_dir(path):
 
 
 def get_config_value(key, config_dict, is_list=True, default=None):
-    """get corresponding values for key in config_dict
+    """Get corresponding values for key in config_dict
 
     Args:
         key: target key in config_dict
@@ -230,7 +253,7 @@ def get_config_value(key, config_dict, is_list=True, default=None):
 
 
 def get_file_absolute_path(input_name, paths=None, alt_dir=None):
-    """find absolute path for input_name
+    """Find absolute path for input_name
 
     Args:
         input_name: the target file to search
@@ -240,6 +263,8 @@ def get_file_absolute_path(input_name, paths=None, alt_dir=None):
     Returns:
         absolute path for input_name
     """
+    LOG.debug("Input name:{}, paths:{}, alt dir:{}".
+              format(input_name, paths, alt_dir))
     input_name = str(input_name)
     abs_paths = set(paths) if paths else set()
     _update_paths(abs_paths)
@@ -271,8 +296,8 @@ def get_file_absolute_path(input_name, paths=None, alt_dir=None):
         err_msg = "Load Error[00109]"
 
     if alt_dir:
-        LOG.debug("alt_dir is %s" % alt_dir)
-    LOG.debug("paths is:")
+        LOG.debug("Alt dir is %s" % alt_dir)
+    LOG.debug("Paths is:")
     for path in abs_paths:
         LOG.debug(path)
     raise ParamError(err_msg, error_no="00109")
@@ -372,14 +397,14 @@ def get_device_log_file(report_path, serial=None, log_name="device_log",
     device_file_name = "{}_{}.log".format(log_name, str(serial).replace(
         ":", "_"))
     device_log_file = os.path.join(log_path, device_file_name)
-    LOG.info("generate device log file: %s", device_log_file)
+    LOG.info("Generate device log file: %s", device_log_file)
     return device_log_file
 
 
 def check_result_report(report_root_dir, report_file, error_message="",
                         report_name="", module_name=""):
     """
-    check whether report_file exits or not. if report_file is not exist,
+    Check whether report_file exits or not. If report_file is not exist,
     create empty report with error_message under report_root_dir
     """
 
@@ -392,9 +417,9 @@ def check_result_report(report_root_dir, report_file, error_message="",
         result_dir = os.path.join(report_root_dir, "result", report_dir)
     os.makedirs(result_dir, exist_ok=True)
     if check_mode(ModeType.decc):
-        LOG.error("report not exist, create empty report")
+        LOG.error("Report not exist, create empty report")
     else:
-        LOG.error("report %s not exist, create empty report under %s" % (
+        LOG.error("Report %s not exist, create empty report under %s" % (
             report_file, result_dir))
 
     suite_name = report_name
@@ -437,11 +462,14 @@ def get_version():
         return ver
     flags = os.O_RDONLY
     modes = stat.S_IWUSR | stat.S_IRUSR
-    with os.fdopen(os.open(ver_file_path, flags, modes), "r") as ver_file:
-        line = ver_file.readline()
-        if '-v' in line:
-            ver = line.strip().split('-')[1]
-            ver = ver.split(':')[0]
+    with os.fdopen(os.open(ver_file_path, flags, modes),
+                   "rb") as ver_file:
+        content_list = ver_file.read().decode("utf-8").split("\n")
+        for line in content_list:
+            if line.strip() and "-v" in line:
+                ver = line.strip().split('-')[1]
+                ver = ver.split(':')[0][1:]
+                break
 
     return ver
 
@@ -482,6 +510,8 @@ def convert_serial(serial):
 def get_shell_handler(request, parser_type):
     suite_name = request.root.source.test_name
     parsers = get_plugin(Plugin.PARSER, parser_type)
+    if parsers:
+        parsers = parsers[:1]
     parser_instances = []
     for listener in request.listeners:
         listener.device_sn = request.config.environment.devices[0].device_sn
@@ -526,10 +556,21 @@ def check_device_name(device, kit, step="setup"):
             kit_device_name != device_name:
         return False
     if kit_device_name and device_name:
-        LOG.debug("do kit:%s %s for device:%s",
+        LOG.debug("Do kit:%s %s for device:%s",
                   kit.__class__.__name__, step, device_name)
     else:
-        LOG.debug("do kit:%s %s", kit.__class__.__name__, step)
+        LOG.debug("Do kit:%s %s", kit.__class__.__name__, step)
+    return True
+
+
+def check_device_env_index(device, kit):
+    if not hasattr(device, "env_index"):
+        return True
+    kit_device_index_list = getattr(kit, "env_index_list", None)
+    env_index = device.get("env_index")
+    if kit_device_index_list and env_index and \
+            len(kit_device_index_list) > 0 and env_index not in kit_device_index_list:
+        return False
     return True
 
 
@@ -616,6 +657,8 @@ def do_module_kit_setup(request, kits):
         for device in request.get_devices():
             if not Scheduler.is_execute:
                 raise ExecuteTerminate()
+            if not check_device_env_index(device, kit):
+                continue
             if check_device_name(device, kit):
                 run_flag = True
                 kit_copy = copy.deepcopy(kit)
@@ -636,3 +679,23 @@ def do_module_kit_teardown(request):
             if check_device_name(device, kit, step="teardown"):
                 kit.__teardown__(device)
         setattr(device, ConfigConst.module_kits, [])
+
+
+def get_version_for_setup():
+    relative_path = "resource/version.txt"
+    parent_dir = os.path.abspath(os.path.dirname(__file__))
+    version_file = os.path.normpath(
+        os.path.join(parent_dir, relative_path))
+    ver = "0.0.0"
+    if os.path.isfile(version_file):
+        flags = os.O_RDONLY
+        modes = stat.S_IWUSR | stat.S_IRUSR
+        with os.fdopen(os.open(version_file, flags, modes),
+                       "rb") as ver_file:
+            content_list = ver_file.read().decode("utf-8").split("\n")
+            for line in content_list:
+                if line.strip() and "-v" in line:
+                    ver = line.strip().split('-')[1]
+                    ver = ver.split(':')[0][1:]
+                    break
+    return ver

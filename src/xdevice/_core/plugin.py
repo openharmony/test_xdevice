@@ -2,7 +2,7 @@
 # coding=utf-8
 
 #
-# Copyright (c) 2020-2021 Huawei Device Co., Ltd.
+# Copyright (c) 2020-2022 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -158,7 +158,7 @@ class Plugin(object):
 
 def get_plugin(plugin_type, plugin_id=None):
     """
-    get plugin instance
+    Get plugin instance
     :param plugin_type: plugin type
     :param plugin_id: plugin id
     :return:  the instance list of plugin
@@ -182,7 +182,7 @@ def get_plugin(plugin_type, plugin_id=None):
 
 def set_plugin_params(plugin_type, plugin_id=None, **kwargs):
     """
-    set plugin parameters
+    Set plugin parameters
     :param plugin_type: plugin type
     :param plugin_id: plugin id
     :param kwargs: the parameters for plugin
@@ -200,13 +200,13 @@ def set_plugin_params(plugin_type, plugin_id=None, **kwargs):
 
 def get_all_plugins():
     """
-    get all plugins
+    Get all plugins
     """
     return dict(_PLUGINS)
 
 
 def clear_plugin_cache():
     """
-    clear all cached plugins
+    Clear all cached plugins
     """
     _PLUGINS.clear()
