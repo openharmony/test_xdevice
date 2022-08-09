@@ -141,6 +141,7 @@ class HostDrivenTestType(object):
     """
     device_test = "DeviceTest"
     windows_test = "WindowsTest"
+    app_test = "AppTest"
 
 
 TEST_DRIVER_SET = {
@@ -287,3 +288,4 @@ class FilePermission(object):
 @dataclass
 class DeviceConnectorType:
     hdc = "usb-hdc"
+

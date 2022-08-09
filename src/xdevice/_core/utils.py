@@ -19,6 +19,7 @@
 import copy
 import os
 import socket
+import sys
 import time
 import platform
 import argparse
@@ -452,6 +453,14 @@ def get_sub_path(test_suite_path):
 
 def is_config_str(content):
     return True if "{" in content and "}" in content else False
+
+
+def is_python_satisfied():
+    mini_version = (3, 7, 0)
+    if sys.version_info > mini_version:
+        return True
+    LOG.error("Please use python {} or higher version to start project".format(mini_version))
+    return False
 
 
 def get_version():

@@ -66,8 +66,8 @@ def _init_global_config():
     # set report variables
     Variables.report_vars.log_dir = "log"
     Variables.report_vars.report_dir = "reports"
-    Variables.report_vars.log_format = "[%(asctime)s] [%(name)s] " \
-                                       "[%(levelname)s] %(message)s"
+    Variables.report_vars.log_format = \
+        "[%(asctime)s] [%(thread)d] [%(name)s] [%(levelname)s] %(message)s"
     Variables.report_vars.log_level = logging.INFO
     Variables.report_vars.log_handler = "console, file"
 

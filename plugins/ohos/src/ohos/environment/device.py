@@ -409,8 +409,9 @@ class Device(IDevice):
             self.device_hilog_proc = None
             self.hilog_file_pipe = None
 
-    def start_hilog_task(self):
-        self._clear_crash_log()
+    def start_hilog_task(self, log_size="20M"):
+        self._sync_device_time()
+        self.clear_crash_log()
         # 先停止一下
         cmd = "hilog -w stop"
         out = self.execute_shell_command(cmd)
@@ -419,8 +420,8 @@ class Device(IDevice):
         out = self.execute_shell_command(cmd)
         cmd = "rm -rf /data/log/hilog/*"
         out = self.execute_shell_command(cmd)
-        # 开始日志任务 设置落盘文件个数最大值1000，链接https://gitee.com/openharmony/hiviewdfx_hilog
-        cmd = "hilog -w start -n 1000"
+        # 开始日志任务 设置落盘文件个数最大值1000, 单个文件20M，链接https://gitee.com/openharmony/hiviewdfx_hilog
+        cmd = "hilog -w start -l {} -n 1000".format(log_size)
         out = self.execute_shell_command(cmd)
         LOG.info("Execute command: {}, result is {}".format(cmd, out))
 
@@ -428,14 +429,14 @@ class Device(IDevice):
         cmd = "hilog -w stop"
         out = self.execute_shell_command(cmd)
         # 把hilog文件夹下所有文件拉出来 由于hdc不支持整个文件夹拉出只能采用先压缩再拉取文件
-        cmd = "tar -zcvf /data/log/hilog_{}.tar.gz /data/log/hilog/".format(log_name)
+        cmd = "cd /data/log/hilog && tar -zcvf /data/log/hilog_{}.tar.gz *".format(log_name)
         out = self.execute_shell_command(cmd)
         LOG.info("Execute command: {}, result is {}".format(cmd, out))
         self.pull_file("/data/log/hilog_{}.tar.gz".format(log_name), "{}/log/".format(self._device_log_path))
         cmd = "rm -rf /data/log/hilog_{}.tar.gz".format(log_name)
         out = self.execute_shell_command(cmd)
         # 获取crash日志
-        self._start_get_crash_log(log_name)
+        self.start_get_crash_log(log_name)
 
     def _get_log(self, log_cmd, *params):
         def filter_by_name(log_name, args):
@@ -477,7 +478,7 @@ class Device(IDevice):
         self.pull_file(temp_path, crash_path)
         LOG.debug("Finish pull file: %s" % log_name)
 
-    def _start_get_crash_log(self, task_name):
+    def start_get_crash_log(self, task_name):
         log_array = list()
         native_crash_cmd = "ls /data/log/faultlog/temp"
         js_crash_cmd = '"ls /data/log/faultlog/faultlogger | grep jscrash"'
@@ -493,18 +494,15 @@ class Device(IDevice):
             log_name = log_name.strip()
             self.get_cur_crash_log(crash_path, log_name)
 
-    def _clear_crash_log(self):
-        self._sync_device_time()
-        clear_block_crash_cmd = "rm -rf /data/log/faultlog/"
+    def clear_crash_log(self):
+        clear_block_crash_cmd = "rm -f /data/log/faultlog/*"
+        clear_native_crash_cmd = "rm -f /data/log/faultlog/temp/*"
+        clear_debug_crash_cmd = "rm -f /data/log/faultlog/debug/*"
+        clear_js_crash_cmd = "rm -f /data/log/faultlog/faultlogger/*"
         self.execute_shell_command(clear_block_crash_cmd)
-        mkdir_block_crash_cmd = "mkdir /data/log/faultlog/"
-        mkdir_native_crash_cmd = "mkdir /data/log/faultlog/temp"
-        mkdir_debug_crash_cmd = "mkdir /data/log/faultlog/debug"
-        mkdir_js_crash_cmd = "mkdir /data/log/faultlog/faultlogger"
-        self.execute_shell_command(mkdir_block_crash_cmd)
-        self.execute_shell_command(mkdir_native_crash_cmd)
-        self.execute_shell_command(mkdir_js_crash_cmd)
-        self.execute_shell_command(mkdir_debug_crash_cmd)
+        self.execute_shell_command(clear_native_crash_cmd)
+        self.execute_shell_command(clear_debug_crash_cmd)
+        self.execute_shell_command(clear_js_crash_cmd)
 
     def _sync_device_time(self):
         # 先同步PC和设备的时间
@@ -525,6 +523,14 @@ class Device(IDevice):
                                             abort_on_exception=True).strip()
         if stdout:
             LOG.debug(stdout)
+            if "fail" in stdout:
+                cmd = ["hdc_std", "list", "targets"]
+                result = exec_cmd(cmd)
+                LOG.debug("exec_cmd list targets: {}, current device_sn: {}".format(result, self.device_sn))
+                if self.device_sn in result:
+                    return "1"
+                else:
+                    return "0"
         return stdout
 
     def set_recover_state(self, state):
@@ -632,13 +638,18 @@ class Device(IDevice):
         self.kill_devicetest_agent()
 
     def is_harmony_rpc_running(self):
-        cmd = 'ps -A | grep %s' % DEVICETEST_HAP_PACKAGE_NAME
+        if hasattr(self, "oh_type") and getattr(self, "oh_type") == "other":
+            bundle_name = DEVICETEST_HAP_PACKAGE_NAME
+        else:
+            # 由于RK上有字段截断问题，因此做出该适配
+            bundle_name = "com.ohos.device"
+        cmd = 'ps -A | grep %s' % bundle_name
         rpc_running = self.execute_shell_command(cmd).strip()
         self.log.debug('is_rpc_running out:{}'.format(rpc_running))
         cmd = 'ps -A | grep %s' % UITEST_NAME
         uitest_running = self.execute_shell_command(cmd).strip()
         self.log.debug('is_uitest_running out:{}'.format(uitest_running))
-        if DEVICETEST_HAP_PACKAGE_NAME in rpc_running and UITEST_NAME in uitest_running:
+        if bundle_name in rpc_running and UITEST_NAME in uitest_running:
             return True
         return False
 
@@ -650,19 +661,29 @@ class Device(IDevice):
         for data in out:
             if UITEST_NAME in data:
                 data = data.split()
-                cmd = 'kill %s' % data[1]
+                if hasattr(self, "oh_type") and getattr(self, "oh_type") == "other":
+                    cmd = 'kill %s' % data[1]
+                else:
+                    cmd = 'kill %s' % data[0]
                 self.execute_shell_command(cmd).strip()
                 return
 
     def kill_devicetest_agent(self):
-        cmd = 'ps -A | grep %s' % DEVICETEST_HAP_PACKAGE_NAME
+        if hasattr(self, "oh_type") and getattr(self, "oh_type") == "other":
+            bundle_name = DEVICETEST_HAP_PACKAGE_NAME
+            index = 1
+        else:
+            # 由于RK上有字段截断问题，因此做出该适配
+            bundle_name = "com.ohos.device"
+            index = 0
+        cmd = 'ps -A | grep %s' % bundle_name
         out = self.execute_shell_command(cmd).strip()
         self.log.debug('is_rpc_running out:{}'.format(out))
         out = out.split("\n")
-        for data in out:
-            if DEVICETEST_HAP_PACKAGE_NAME in data:
-                data = data.split()
-                data = 'kill %s' % data[1]
+        for name in out:
+            if bundle_name in name:
+                name = name.split()
+                cmd = 'kill %s' % name[index]
                 self.execute_shell_command(cmd).strip()
                 self.log.debug('stop devicetest ability success.')
                 return
@@ -703,10 +724,10 @@ class Device(IDevice):
                 self._h_port, self.d_port)
             self.connector_command(cmd)
             try:
-                self._proxy.init(port=self._h_port, addr=self.host, _ad=self)
+                self._proxy.init(port=self._h_port, addr=self.host, device=self)
             except Exception as _:
                 time.sleep(3)
-                self._proxy.init(port=self._h_port, addr=self.host, _ad=self)
+                self._proxy.init(port=self._h_port, addr=self.host, device=self)
 
             if self._uitestdeamon is not None:
                 self._uitestdeamon.init(self)

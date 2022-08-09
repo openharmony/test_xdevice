@@ -24,14 +24,13 @@ from _core.logger import platform_logger
 from _core.report.reporter_helper import ExecInfo
 from _core.report.reporter_helper import ReportConstant
 from _core.report.result_reporter import ResultReporter
+from _core.utils import is_python_satisfied
 
 LOG = platform_logger("ReportMain")
 
 
 def main_report():
-    if sys.version < '3.7':
-        LOG.error("Please use python 3.7 or higher version to start "
-                  "project")
+    if not is_python_satisfied():
         return
 
     args = sys.argv

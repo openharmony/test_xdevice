@@ -39,6 +39,7 @@ from _core.plugin import Plugin
 from _core.plugin import get_plugin
 from _core.utils import SplicingAction
 from _core.utils import get_instance_name
+from _core.utils import is_python_satisfied
 from _core.report.result_reporter import ResultReporter
 
 __all__ = ["Console"]
@@ -88,9 +89,7 @@ class Console(object):
         """
         Main xDevice console providing user with the interface to interact
         """
-        if sys.version < '3.7':
-            LOG.error("Please use python 3.7 or higher version to "
-                      "start project")
+        if not is_python_satisfied():
             sys.exit(0)
 
         if args is None or len(args) < 2:
