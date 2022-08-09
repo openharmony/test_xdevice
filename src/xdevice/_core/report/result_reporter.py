@@ -130,16 +130,6 @@ class ResultReporter(IReporter):
         self.set_summary_report_result(
             self.summary_data_path, DataHelper.to_string(test_suites_element))
 
-        if self._check_mode(ModeType.decc):
-            try:
-                from agent.decc import Handler
-                from xdevice import Scheduler
-                LOG.info("Upload task summary result to decc")
-                Handler.upload_task_summary_results(
-                    self.get_result_of_summary_report())
-            except ModuleNotFoundError as error:
-                LOG.error("Module not found %s", error.args)
-
     def _update_test_suites(self, test_suites_element):
         # initial attributes for test suites element
         test_suites_attributes, need_update_attributes = \

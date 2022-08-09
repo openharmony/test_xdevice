@@ -35,7 +35,7 @@ from xdevice import CommonParserType
 
 __all__ = ["CppTestParser", "CppTestListParser", "JunitParser", "JSUnitParser",
            "OHKernelTestParser", "OHJSUnitTestParser",
-           "OHJSUnitTestListParser"]
+           "OHJSUnitTestListParser", "_ACE_LOG_MARKER"]
 
 _INFORMATIONAL_MARKER = "[----------]"
 _START_TEST_RUN_MARKER = "[==========] Running"
@@ -1017,7 +1017,7 @@ class OHJSUnitTestParser(IParser):
 
     def __init__(self):
         self.state_machine = StateRecorder()
-        self.suite_name = ""
+        self.suites_name = ""
         self.listeners = []
         self.current_key = None
         self.current_value = None
@@ -1026,7 +1026,7 @@ class OHJSUnitTestParser(IParser):
         self.test_run_finished = False
 
     def get_suite_name(self):
-        return self.suite_name
+        return self.suites_name
 
     def get_listeners(self):
         return self.listeners
@@ -1160,7 +1160,7 @@ class OHJSUnitTestParser(IParser):
         for listener in self.get_listeners():
             suite = copy.copy(suite_result)
             listener.__ended__(LifeCycle.TestSuites, suite,
-                               suites_name=self.suite_name)
+                               suites_name=self.suites_name)
         self.state_machine.current_suite = None
 
     def mark_test_as_blocked(self, test):
