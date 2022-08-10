@@ -80,7 +80,7 @@ def perform_device_action(func):
             except ReportException as error:
                 self.log.exception("Generate report error!", exc_info=False)
                 exception = error
-            except (ConnectionResetError, ConnectionRefusedError) as error:
+            except (ConnectionResetError, ConnectionRefusedError) as error:  # pylint:disable=undefined-variable
                 self.log.error("error type: %s, error: %s" %
                                (error.__class__.__name__, error))
                 cmd = "hdc_std target boot"
@@ -613,7 +613,7 @@ class Device(IDevice):
             try:
                 from devicetest.controllers.openharmony import OpenHarmony
                 OpenHarmony.install_harmony_rpc(self)
-            except (ModuleNotFoundError, ImportError) as error:
+            except (ModuleNotFoundError, ImportError) as error:  # pylint:disable=undefined-variable
                 self.log.debug(str(error))
                 self.log.error('please check devicetest extension module is exist.')
                 raise Exception(ErrorMessage.Error_01437.Topic)
