@@ -482,7 +482,6 @@ class Device(IDevice):
         native_crash_cmd = "ls /data/log/faultlog/temp"
         js_crash_cmd = '"ls /data/log/faultlog/faultlogger | grep jscrash"'
         block_crash_cmd = '"ls /data/log/faultlog/"'
-
         # 获取crash日志文件
         log_array.extend(self._get_log(native_crash_cmd, "cppcrash"))
         log_array.extend(self._get_log(js_crash_cmd, "jscrash"))
