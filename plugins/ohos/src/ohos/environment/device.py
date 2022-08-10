@@ -409,7 +409,7 @@ class Device(IDevice):
             self.device_hilog_proc = None
             self.hilog_file_pipe = None
 
-    def start_hilog_task(self, log_size="20M"):
+    def start_hilog_task(self, log_size="50M"):
         self._sync_device_time()
         self.clear_crash_log()
         # 先停止一下
