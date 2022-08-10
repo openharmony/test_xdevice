@@ -95,7 +95,7 @@ def stop_standing_subprocess(process):
         signal_value = signal.SIGINT if sys_type == "Windows" \
             else signal.SIGTERM
         os.kill(process.pid, signal_value)
-    except (PermissionError, AttributeError, FileNotFoundError,
+    except (PermissionError, AttributeError, FileNotFoundError,  # pylint:disable=undefined-variable
             SystemError) as error:
         LOG.error("Stop standing subprocess error '%s'" % error)
 
@@ -203,7 +203,7 @@ def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False, redirect=
         else:
             return err if err else out
 
-    except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,
+    except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,  # pylint:disable=undefined-variable
             EOFError, IOError) as _:
         sys_type = platform.system()
         if sys_type == "Linux" or sys_type == "Darwin":

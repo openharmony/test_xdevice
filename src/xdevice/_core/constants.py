@@ -279,6 +279,15 @@ class ConfigConst(object):
     device_log = "device_log"
 
 
+@dataclass
+class ReportConst(object):
+    session_id = "session_id"
+    command = "command"
+    report_path = "report_path"
+    unsuccessful_params = "unsuccessful_params"
+    data_reports = "data_reports"
+
+
 class FilePermission(object):
     mode_777 = 0o777
     mode_755 = 0o755

@@ -57,6 +57,7 @@ from _core.constants import DeviceLabelType
 from _core.constants import SchedulerType
 from _core.constants import ListenerType
 from _core.constants import ConfigConst
+from _core.constants import ReportConst
 from _core.constants import HostDrivenTestType
 from _core.executor.concurrent import DriversThread
 from _core.executor.concurrent import QueueMonitorThread
@@ -1149,10 +1150,10 @@ class Scheduler(object):
             history_report_path = \
                 getattr(task.config, ConfigConst.history_report_path, "")
             params = ResultReporter.get_task_info_params(history_report_path)
-            if params and params[3]:
-                if dict(params[3]).get(module_name, []):
+            if params and params[ReportConst.unsuccessful_params]:
+                if dict(params[ReportConst.unsuccessful_params]).get(module_name, []):
                     failed_flag = True
-                elif dict(params[3]).get(str(module_name).split(".")[0], []):
+                elif dict(params[ReportConst.unsuccessful_params]).get(str(module_name).split(".")[0], []):
                     failed_flag = True
         return failed_flag
 

@@ -24,6 +24,7 @@ import shutil
 import zipfile
 import tempfile
 import stat
+from collections import namedtuple
 from dataclasses import dataclass
 
 from xdevice import ParamError
@@ -1505,7 +1506,7 @@ class RemoteDexRunner:
             self.config.device.execute_shell_command(
                 command, timeout=self.config.timeout,
                 receiver=handler, retry=0)
-        except ConnectionResetError as _:
+        except ConnectionResetError as _:  # pylint:disable=undefined-variable
             if len(listener) == 1 and isinstance(listener[0],
                                                  CollectingTestListener):
                 LOG.info("Try subprocess ")
@@ -2390,8 +2391,7 @@ class JSUnitTestDriver(IDriver):
                                       self.config.resource_path,
                                       self.config.testcases_path)
 
-        package, ability_name, runner, testcase_timeout = \
-            self._get_driver_config(json_config)
+        driver_config = self._get_driver_config(json_config)
         # bms not check release type
         self.config.device.execute_shell_command("bm set -d enable")
         # turn auto rotation off
@@ -2402,7 +2402,8 @@ class JSUnitTestDriver(IDriver):
         # execute test case
         command = "aa start -p %s -n %s " \
                   "-s unittest %s -s rawLog true -s timeout %s" \
-                  % (package, ability_name, runner, testcase_timeout)
+                  % (driver_config.package, driver_config.ability_name,
+                     driver_config.runner, driver_config.testcase_timeout)
         result_value = self.config.device.execute_shell_command(
             command, timeout=self.timeout)
         if self.xml_output == "true":
@@ -2410,7 +2411,7 @@ class JSUnitTestDriver(IDriver):
             if report_name:
                 self.config.target_test_path = "/%s/%s/%s/%s/%s/" \
                                                % ("sdcard", "Android",
-                                                  "data", package, "cache")
+                                                  "data", driver_config.package, "cache")
                 result = ResultManager(report_name,
                                        self.config.report_path,
                                        self.config.device,
@@ -2446,7 +2447,8 @@ class JSUnitTestDriver(IDriver):
         if not package:
             raise ParamError("Can't find package in config file.",
                              error_no="03201")
-        return package, ability_name, runner, testcase_timeout
+        DriverConfig = namedtuple('DriverConfig', 'package ability_name runner testcase_timeout')
+        return DriverConfig(package, ability_name, runner, testcase_timeout)
 
     def run_js_outer(self, request):
         try:

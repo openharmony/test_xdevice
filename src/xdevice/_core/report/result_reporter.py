@@ -620,8 +620,7 @@ class ResultReporter(IReporter):
             LOG.error("%s error!", ReportConstant.task_info_record)
             return ()
 
-        return result["session_id"], result["command"], result["report_path"],\
-               result["unsuccessful_params"], result["data_reports"]
+        return result
 
     @classmethod
     def set_summary_report_result(cls, summary_data_path, result_xml):
