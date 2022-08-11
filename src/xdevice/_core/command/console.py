@@ -23,10 +23,12 @@ import signal
 import sys
 import threading
 import copy
+from collections import namedtuple
 
 from _core.config.config_manager import UserConfigManager
 from _core.constants import SchedulerType
 from _core.constants import ConfigConst
+from _core.constants import ReportConst
 from _core.constants import ModeType
 from _core.constants import ToolCommandType
 from _core.environment.manager_env import EnvironmentManager
@@ -39,6 +41,7 @@ from _core.plugin import Plugin
 from _core.plugin import get_plugin
 from _core.utils import SplicingAction
 from _core.utils import get_instance_name
+from _core.utils import is_python_satisfied
 from _core.report.result_reporter import ResultReporter
 
 __all__ = ["Console"]
@@ -47,11 +50,12 @@ LOG = platform_logger("Console")
 try:
     if platform.system() != 'Windows':
         import readline
-except (ModuleNotFoundError, ImportError):
+except (ModuleNotFoundError, ImportError):  # pylint:disable=undefined-variable
     LOG.warning("Readline module is not exist.")
 
 MAX_VISIBLE_LENGTH = 49
 MAX_RESERVED_LENGTH = 46
+Argument = namedtuple('Argument', 'options unparsed valid_param parser')
 
 
 class Console(object):
@@ -88,9 +92,7 @@ class Console(object):
         """
         Main xDevice console providing user with the interface to interact
         """
-        if sys.version < '3.7':
-            LOG.error("Please use python 3.7 or higher version to "
-                      "start project")
+        if not is_python_satisfied():
             sys.exit(0)
 
         if args is None or len(args) < 2:
@@ -324,7 +326,7 @@ class Console(object):
             valid_param = False
             parser.print_help()
             LOG.warning("Parameter parsing system exit exception.")
-        return options, unparsed, valid_param, parser
+        return Argument(options, unparsed, valid_param, parser)
 
     @classmethod
     def _params_pre_processing(cls, para_list):
@@ -384,16 +386,15 @@ class Console(object):
             Scheduler.command_queue.append(args)
             LOG.info("Input command: {}".format(args))
             para_list = args.split()
-            (options, _, valid_param, parser) = self.argument_parser(
-                para_list)
-            if options is None or not valid_param:
+            argument = self.argument_parser( para_list)
+            if argument.options is None or not argument.valid_param:
                 LOG.warning("Options is None.")
                 return None
-            if options.action == ToolCommandType.toolcmd_key_run and \
-                    options.retry:
-                options = self._get_retry_options(options, parser)
-                if options.dry_run:
-                    history_report_path = getattr(options,
+            if argument.options.action == ToolCommandType.toolcmd_key_run and \
+                    argument.options.retry:
+                argument.options = self._get_retry_options(argument.options, argument.parser)
+                if argument.options.dry_run:
+                    history_report_path = getattr(argument.options,
                                                   "history_report_path", "")
                     self._list_retry_case(history_report_path)
                     return
@@ -402,12 +403,12 @@ class Console(object):
                 SuiteReporter.clear_failed_case_list()
                 SuiteReporter.clear_report_result()
 
-            command = options.action
+            command = argument.options.action
             if command == "":
                 LOG.info("Command is empty.")
                 return
 
-            self._process_command(command, options, para_list, parser)
+            self._process_command(command, argument.options, para_list, argument.parser)
         except (ParamError, ValueError, TypeError, SyntaxError,
                 AttributeError) as exception:
             error_no = getattr(exception, "error_no", "00000")
@@ -457,18 +458,18 @@ class Console(object):
                 split_list = split_list[:pos] + split_list[pos+2:]
                 history_command = " ".join(split_list)
 
-        (options, _, _, _) = self.argument_parser(history_command.split())
-        options.dry_run = is_dry_run
-        setattr(options, "history_report_path", history_report_path)
+        argument = self.argument_parser(history_command.split())
+        argument.options.dry_run = is_dry_run
+        setattr(argument.options, "history_report_path", history_report_path)
         # modify history_command -rp param and -sn param
         for option_tuple in self._get_to_be_replaced_option(parser):
             history_command = self._replace_history_option(
-                history_command, (input_options, options), option_tuple)
+                history_command, (input_options, argument.options), option_tuple)
 
         # add history command to Scheduler.command_queue
         LOG.info("Retry command: %s", history_command)
         Scheduler.command_queue[-1] = history_command
-        return options
+        return argument.options
 
     @classmethod
     def _process_command_help(cls, parser, para_list):
@@ -577,8 +578,9 @@ class Console(object):
         if not params:
             raise ParamError("no retry case exists")
         session_id, command, report_path, failed_list = \
-            params[0], params[1], params[2], \
-            [(module, failed) for module, case_list in params[3].items()
+            params[ReportConst.session_id], params[ReportConst.command], \
+            params[ReportConst.report_path], \
+            [(module, failed) for module, case_list in params[ReportConst.unsuccessful_params].items()
              for failed in case_list]
         if Scheduler.mode == ModeType.decc:
             from xdevice import SuiteReporter
@@ -662,7 +664,7 @@ class Console(object):
                     options.session else "'%s' has no command executed" % \
                                          options.session
                 raise ParamError(error_msg)
-            history_command, history_report_path = params[1], params[2]
+            history_command, history_report_path = params[ReportConst.command], params[ReportConst.report_path]
         else:
             history_command, history_report_path = "", ""
             for command_tuple in Scheduler.command_queue[:-1]:

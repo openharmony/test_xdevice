@@ -19,6 +19,7 @@
 import logging
 import sys
 import time
+import threading
 from logging.handlers import RotatingFileHandler
 
 from _core.constants import LogType
@@ -325,7 +326,8 @@ def remove_encrypt_file_handler():
 
 def _init_global_logger(name=None):
     handler = logging.StreamHandler(sys.stdout)
-    log_format = "[%(asctime)s] [%(name)s] [%(levelname)s] [%(message)s]"
+    log_format = \
+        "[%(asctime)s] [%(thread)d] [%(name)s] [%(levelname)s] [%(message)s]"
     handler.setFormatter(logging.Formatter(log_format))
     log = FrameworkLog(name)
     log.platform_log.setLevel(logging.INFO)
@@ -398,7 +400,7 @@ class EncryptFileHandler(RotatingFileHandler):
             stream = getattr(self, "stream", self._open())
             stream.write(msg)
             self.flush()
-        except RecursionError as _:
+        except RecursionError as _:  # pylint:disable=undefined-variable
             raise
 
     def _encrypt_valid(self):
@@ -423,15 +425,17 @@ class EncryptFileHandler(RotatingFileHandler):
         msg = record.msg
         if msg and "%s" in msg:
             msg = msg % record.args
-        info = "[%s] [%s] [%s] %s%s" \
-               % (create_time, name, level_name, msg, "\n")
+        info = "[%s] [%s] [%s] [%s] %s%s" \
+               % (create_time, threading.currentThread().ident, name,
+                  level_name, msg, "\n")
 
         try:
             return do_rsa_encrypt(info)
         except ParamError as error:
             error_no_str = \
                 "ErrorNo={}".format(getattr(error, "error_no", "00113"))
-            info = "[%s] [%s] [%s] [%s] [%s]\n" % (
-                create_time, name, "ERROR", error, error_no_str)
+            info = "[%s] [%s] [%s] [%s] [%s] [%s]\n" % (
+                create_time, threading.currentThread().ident,
+                name, "ERROR", error, error_no_str)
             self.encrypt_error = bytes(info, "utf-8")
             return self.encrypt_error

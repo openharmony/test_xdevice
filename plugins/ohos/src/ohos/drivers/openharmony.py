@@ -17,6 +17,7 @@
 #
 
 import os
+import time
 
 from xdevice import ParamError
 from xdevice import IDriver
@@ -239,6 +240,8 @@ class OHJSUnitTestDriver(IDriver):
                     "test source '%s' not exists" %
                     request.root.source.source_string, error_no="00110")
             LOG.debug("Test case file path: %s" % suite_file)
+            self.config.device.set_device_report_path(request.config.report_path)
+
             hilog = get_device_log_file(request.config.report_path,
                                         request.config.device.__get_serial__() + "_" + request.
                                         get_module_name(),
@@ -248,6 +251,7 @@ class OHJSUnitTestDriver(IDriver):
                                  0o755)
             self.config.device.execute_shell_command(command="hilog -r")
             with os.fdopen(hilog_open, "a") as hilog_file_pipe:
+                self.config.device.clear_crash_log()
                 self.config.device.start_catch_device_log(hilog_file_pipe=hilog_file_pipe)
                 self._run_oh_jsunit(config_file, request)
         except Exception as exception:
@@ -257,6 +261,10 @@ class OHJSUnitTestDriver(IDriver):
             LOG.exception(self.error_message, exc_info=True, error_no="03409")
             raise exception
         finally:
+            serial = "{}_{}".format(str(self.config.device.__get_serial__()), time.time_ns())
+            log_tar_file_name = "{}_{}".format(str(serial).replace(
+                ":", "_"), request.get_module_name())
+            self.config.device.start_get_crash_log(log_tar_file_name)
             self.config.device.stop_catch_device_log()
             self.result = check_result_report(
                 request.config.report_path, self.result, self.error_message)
@@ -291,7 +299,7 @@ class OHJSUnitTestDriver(IDriver):
             self.config.device.connector_command("target mount")
             do_module_kit_setup(request, self.kits)
             self.runner = OHJSUnitTestRunner(self.config)
-            self.runner.suite_name = request.get_module_name()
+            self.runner.suites_name = request.get_module_name()
             # execute test case
             self._get_runner_config(json_config)
             oh_jsunit_para_parse(self.runner, self.config.testargs)
@@ -334,10 +342,12 @@ class OHJSUnitTestDriver(IDriver):
                                   json_config.get_driver(), False)
         bundle = get_config_value('bundle-name',
                                   json_config. get_driver(), False)
+        is_rerun = get_config_value('rerun', json_config.get_driver(), False)
 
         self.config.package_name = package
         self.config.module_name = module
         self.config.bundle_name = bundle
+        self.rerun = True if is_rerun == 'true' else False
 
         if not package and not module:
             raise ParamError("Neither package nor moodle is found"
@@ -364,7 +374,7 @@ class OHJSUnitTestDriver(IDriver):
         test_to_run = self._collect_test_to_run()
         LOG.info("Collected test count is: %s" % (len(test_to_run)
                                                   if test_to_run else 0))
-        if not test_to_run:
+        if not test_to_run or not self.rerun:
             self.runner.run(listener)
         else:
             self._run_with_rerun(listener, test_to_run)
@@ -429,7 +439,7 @@ class OHJSUnitTestDriver(IDriver):
 class OHJSUnitTestRunner:
     def __init__(self, config):
         self.arg_list = {}
-        self.suite_name = None
+        self.suites_name = None
         self.config = config
         self.rerun_attemp = 3
         self.suite_recorder = {}
@@ -459,7 +469,7 @@ class OHJSUnitTestRunner:
         parser_instances = []
         for parser in parsers:
             parser_instance = parser.__class__()
-            parser_instance.suite_name = self.suite_name
+            parser_instance.suites_name = self.suite_name
             parser_instance.listeners = listener
             parser_instances.append(parser_instance)
         handler = ShellHandler(parser_instances)

@@ -19,6 +19,7 @@
 import copy
 import os
 import socket
+import sys
 import time
 import platform
 import argparse
@@ -94,7 +95,7 @@ def stop_standing_subprocess(process):
         signal_value = signal.SIGINT if sys_type == "Windows" \
             else signal.SIGTERM
         os.kill(process.pid, signal_value)
-    except (PermissionError, AttributeError, FileNotFoundError,
+    except (PermissionError, AttributeError, FileNotFoundError,  # pylint:disable=undefined-variable
             SystemError) as error:
         LOG.error("Stop standing subprocess error '%s'" % error)
 
@@ -202,7 +203,7 @@ def exec_cmd(cmd, timeout=5 * 60, error_print=True, join_result=False, redirect=
         else:
             return err if err else out
 
-    except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,
+    except (TimeoutError, KeyboardInterrupt, AttributeError, ValueError,  # pylint:disable=undefined-variable
             EOFError, IOError) as _:
         sys_type = platform.system()
         if sys_type == "Linux" or sys_type == "Darwin":
@@ -452,6 +453,14 @@ def get_sub_path(test_suite_path):
 
 def is_config_str(content):
     return True if "{" in content and "}" in content else False
+
+
+def is_python_satisfied():
+    mini_version = (3, 7, 0)
+    if sys.version_info > mini_version:
+        return True
+    LOG.error("Please use python {} or higher version to start project".format(mini_version))
+    return False
 
 
 def get_version():
