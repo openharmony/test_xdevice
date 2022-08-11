@@ -141,6 +141,7 @@ class HostDrivenTestType(object):
     """
     device_test = "DeviceTest"
     windows_test = "WindowsTest"
+    app_test = "AppTest"
 
 
 TEST_DRIVER_SET = {
@@ -278,6 +279,15 @@ class ConfigConst(object):
     device_log = "device_log"
 
 
+@dataclass
+class ReportConst(object):
+    session_id = "session_id"
+    command = "command"
+    report_path = "report_path"
+    unsuccessful_params = "unsuccessful_params"
+    data_reports = "data_reports"
+
+
 class FilePermission(object):
     mode_777 = 0o777
     mode_755 = 0o755
@@ -287,3 +297,4 @@ class FilePermission(object):
 @dataclass
 class DeviceConnectorType:
     hdc = "usb-hdc"
+

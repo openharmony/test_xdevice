@@ -50,6 +50,7 @@ from _core.constants import ProductForm
 from _core.constants import TestType
 from _core.constants import CKit
 from _core.constants import ConfigConst
+from _core.constants import ReportConst
 from _core.constants import ModeType
 from _core.constants import TestExecType
 from _core.constants import ListenerType
@@ -156,6 +157,7 @@ __all__ = [
     "TestType",
     "CKit",
     "ConfigConst",
+    "ReportConst",
     "ModeType",
     "TestExecType",
     "ListenerType",

@@ -24,6 +24,7 @@ import shutil
 import zipfile
 import tempfile
 import stat
+from collections import namedtuple
 from dataclasses import dataclass
 
 from xdevice import ParamError
@@ -62,6 +63,7 @@ from xdevice import unlock_device
 from ohos.environment.dmlib import process_command_ret
 from ohos.environment.dmlib import DisplayOutputReceiver
 from ohos.testkit.kit import junit_dex_para_parse
+from ohos.parser.parser import _ACE_LOG_MARKER
 
 __all__ = ["CppTestDriver", "DexTestDriver", "HapTestDriver",
            "JSUnitTestDriver", "JUnitTestDriver", "RemoteTestRunner",
@@ -1504,7 +1506,7 @@ class RemoteDexRunner:
             self.config.device.execute_shell_command(
                 command, timeout=self.config.timeout,
                 receiver=handler, retry=0)
-        except ConnectionResetError as _:
+        except ConnectionResetError as _:  # pylint:disable=undefined-variable
             if len(listener) == 1 and isinstance(listener[0],
                                                  CollectingTestListener):
                 LOG.info("Try subprocess ")
@@ -2224,7 +2226,7 @@ class JSUnitTestDriver(IDriver):
         label_list, suite_info, is_suites_end = self.read_device_log_timeout(
             device_log_file, message_list, timeout)
         if not is_suites_end:
-            message_list.append("app Log: [end] run suites end\n")
+            message_list.append(_ACE_LOG_MARKER + ": [end] run suites end\n")
             LOG.warning("there is no suites end")
         if len(label_list[0]) > 0 and sum(label_list[0]) != 0:
             # the problem happened! when the sum of label list is not zero
@@ -2242,13 +2244,13 @@ class JSUnitTestDriver(IDriver):
                 continue
             # check the start label, then peek next position
             if i + 1 == len(label_list[0]):  # next position at the tail
-                message_list.insert(-1, "app Log: [suite end]\n")
+                message_list.insert(-1, _ACE_LOG_MARKER + ": [suite end]\n")
                 LOG.warning("there is no suite end")
                 continue
             if label_list[0][i + 1] != 1:  # 0 present the end label
                 continue
             message_list.insert(label_list[1][i + 1],
-                                "app Log: [suite end]\n")
+                                _ACE_LOG_MARKER + ": [suite end]\n")
             LOG.warning("there is no suite end")
             for j in range(i + 1, len(label_list[1])):
                 label_list[1][j] += 1  # move the index to next
@@ -2338,7 +2340,7 @@ class JSUnitTestDriver(IDriver):
                     if not line:
                         time.sleep(5)  # wait for log write to file
                         break
-                    if line.lower().find("jsapp:") != -1:
+                    if line.lower().find(_ACE_LOG_MARKER + ":") != -1:
                         if "[suites info]" in line:
                             _, pos = re.match(".+\\[suites info]", line).span()
                             suite_info.append(line[pos:].strip())
@@ -2389,8 +2391,7 @@ class JSUnitTestDriver(IDriver):
                                       self.config.resource_path,
                                       self.config.testcases_path)
 
-        package, ability_name, runner, testcase_timeout = \
-            self._get_driver_config(json_config)
+        driver_config = self._get_driver_config(json_config)
         # bms not check release type
         self.config.device.execute_shell_command("bm set -d enable")
         # turn auto rotation off
@@ -2401,7 +2402,8 @@ class JSUnitTestDriver(IDriver):
         # execute test case
         command = "aa start -p %s -n %s " \
                   "-s unittest %s -s rawLog true -s timeout %s" \
-                  % (package, ability_name, runner, testcase_timeout)
+                  % (driver_config.package, driver_config.ability_name,
+                     driver_config.runner, driver_config.testcase_timeout)
         result_value = self.config.device.execute_shell_command(
             command, timeout=self.timeout)
         if self.xml_output == "true":
@@ -2409,7 +2411,7 @@ class JSUnitTestDriver(IDriver):
             if report_name:
                 self.config.target_test_path = "/%s/%s/%s/%s/%s/" \
                                                % ("sdcard", "Android",
-                                                  "data", package, "cache")
+                                                  "data", driver_config.package, "cache")
                 result = ResultManager(report_name,
                                        self.config.report_path,
                                        self.config.device,
@@ -2445,7 +2447,8 @@ class JSUnitTestDriver(IDriver):
         if not package:
             raise ParamError("Can't find package in config file.",
                              error_no="03201")
-        return package, ability_name, runner, testcase_timeout
+        DriverConfig = namedtuple('DriverConfig', 'package ability_name runner testcase_timeout')
+        return DriverConfig(package, ability_name, runner, testcase_timeout)
 
     def run_js_outer(self, request):
         try:
@@ -2473,6 +2476,7 @@ class JSUnitTestDriver(IDriver):
                                            timeout=30 * 1000)
             time.sleep(10)
 
+            self.config.device.set_device_report_path(request.config.report_path)
             self.config.device.connector_command("shell hilog -r", timeout=30 * 1000)
             self._run_jsunit_outer(config_file, request)
         except Exception as exception:
@@ -2482,6 +2486,10 @@ class JSUnitTestDriver(IDriver):
             LOG.exception(self.error_message, exc_info=False, error_no="03409")
             raise exception
         finally:
+            serial = "{}_{}".format(str(self.config.device.__get_serial__()), time.time_ns())
+            log_tar_file_name = "{}_{}".format(str(serial).replace(
+                ":", "_"), request.get_module_name())
+            self.config.device.start_get_crash_log(log_tar_file_name)
             self.config.device.stop_catch_device_log()
             self.result = check_result_report(
                 request.config.report_path, self.result, self.error_message)
@@ -2513,6 +2521,7 @@ class JSUnitTestDriver(IDriver):
                                  0o755)
 
             with os.fdopen(hilog_open, "a") as hilog_file_pipe:
+                self.config.device.clear_crash_log()
                 self.config.device.start_catch_device_log(
                     hilog_file_pipe=hilog_file_pipe)
 

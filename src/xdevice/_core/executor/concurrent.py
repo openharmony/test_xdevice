@@ -26,6 +26,7 @@ from concurrent.futures import wait
 
 from _core.constants import ModeType
 from _core.constants import ConfigConst
+from _core.constants import ReportConst
 from _core.executor.request import Request
 from _core.logger import platform_logger
 from _core.plugin import Config
@@ -269,11 +270,11 @@ class DriversThread(threading.Thread):
                 for i in Handler.DAV.case_id_list:
                     failed_list.append(i + "#" + i)
             else:
-                failed_list = params[3].get(module_name, [])
+                failed_list = params[ReportConst.unsuccessful_params].get(module_name, [])
         except:
-            failed_list = params[3].get(module_name, [])
+            failed_list = params[ReportConst.unsuccessful_params].get(module_name, [])
         if not failed_list:
-            failed_list = params[3].get(str(module_name).split(".")[0], [])
+            failed_list = params[ReportConst.unsuccessful_params].get(str(module_name).split(".")[0], [])
         unpassed_test_params.extend(failed_list)
         LOG.debug("Get unpassed test params %s", unpassed_test_params)
         return unpassed_test_params
@@ -432,7 +433,7 @@ class DriversThread(threading.Thread):
             from _core.report.result_reporter import ResultReporter
             params = ResultReporter.get_task_info_params(history_report_path)
             if params:
-                report_data_dict = dict(params[4])
+                report_data_dict = dict(params[ReportConst.report_path])
                 if execute_result_name in report_data_dict.keys():
                     return report_data_dict.get(execute_result_name)
                 elif execute_result_name.split(".")[0] in \
