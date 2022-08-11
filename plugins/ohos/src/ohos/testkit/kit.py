@@ -249,14 +249,14 @@ class PushKit(ITestKit):
                 for root, _, files in os.walk(real_src_path):
                     for file in files:
                         device.connector_command(
-                            "file send {} {}".format(os.path.join(root, file),
+                            "file send \"{}\" \"{}\"".format(os.path.join(root, file),
                                                      dst))
                         LOG.debug(
                             "Push file finished from {} to {}".format(
                                 os.path.join(root, file), dst))
                         self.pushed_file.append(os.path.join(dst, file))
             else:
-                device.connector_command("file send {} {}".format(real_src_path,
+                device.connector_command("file send \"{}\" \"{}\"".format(real_src_path,
                                                             dst))
                 LOG.debug("Push file finished from {} to {}".format(src, dst))
                 self.pushed_file.append(dst)
@@ -689,7 +689,7 @@ class AppInstallKit(ITestKit):
                 LOG.error("The app file {} does not exist".format(app))
                 continue
             if hasattr(device, "is_harmony") and device.is_harmony:
-                device.connector_command("install {}".format(app_file))
+                device.connector_command("install \"{}\"".format(app_file))
             else:
                 self.install_hap(device, app_file)
             self.installed_app.add(app_file)
