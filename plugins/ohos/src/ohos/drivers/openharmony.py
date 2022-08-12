@@ -490,7 +490,7 @@ class OHJSUnitTestRunner:
             parser_instance = parser.__class__()
             parser_instance.suites_name = self.suites_name
             parser_instance.listeners = listener
-            parser_instances.runner = self
+            parser_instance.runner = self
             parser_instances.append(parser_instance)
             self.finished_observer = parser_instance
         handler = ShellHandler(parser_instances)

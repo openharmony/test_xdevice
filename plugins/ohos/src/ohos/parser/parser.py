@@ -1236,7 +1236,7 @@ class OHJSUnitTestParser(IParser):
         self._handle_lacking_whole_suite(report_listener)
 
     def _handle_lacking_one_testcase(self, report_listener):
-        for suite in report_listener.suites.value():
+        for suite in report_listener.suites.values():
             test_des_list = self.runner.expect_tests_dict.get(
                 suite.suite_name, [])
             pos  = self.runner.suite_recorder.get(suite.suite_name)[0]
