@@ -1274,7 +1274,7 @@ class OHJSUnitTestParser(IParser):
             current_suite.suite_name = self.current_value
             for listener in self.get_listeners():
                 suite = copy.copy(current_suite)
-                listener.__started__(lifecycle.TestSuite, suite)
+                listener.__started__(LifeCycle.TestSuite, suite)
 
             for test in test_des_list:
                 test_result = self.state_machine.test(reset=True)
