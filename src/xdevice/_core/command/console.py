@@ -386,7 +386,7 @@ class Console(object):
             Scheduler.command_queue.append(args)
             LOG.info("Input command: {}".format(args))
             para_list = args.split()
-            argument = self.argument_parser( para_list)
+            argument = self.argument_parser(para_list)
             if argument.options is None or not argument.valid_param:
                 LOG.warning("Options is None.")
                 return None

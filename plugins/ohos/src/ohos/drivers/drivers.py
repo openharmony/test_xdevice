@@ -1768,8 +1768,9 @@ class DexTestDriver(IDriver):
             if not getattr("exception", "error_no", ""):
                 setattr(exception, "error_no", "03203")
             return_message = str(exception.args)
-        shutil.rmtree(long_command_path)
-        return return_message
+        finally:
+            shutil.rmtree(long_command_path)
+            return return_message
 
     @staticmethod
     def _make_long_command_file(command, longcommand_path, filename):
@@ -1784,7 +1785,8 @@ class DexTestDriver(IDriver):
         except(IOError, ValueError) as err_msg:
             LOG.exception("Error for make long command file: ", err_msg,
                           exc_info=False, error_no="03200")
-        return sh_file_name, file_path
+        finally:
+            return sh_file_name, file_path
 
     def __result__(self):
         return self.result if os.path.exists(self.result) else ""

@@ -688,23 +688,3 @@ def do_module_kit_teardown(request):
             if check_device_name(device, kit, step="teardown"):
                 kit.__teardown__(device)
         setattr(device, ConfigConst.module_kits, [])
-
-
-def get_version_for_setup():
-    relative_path = "resource/version.txt"
-    parent_dir = os.path.abspath(os.path.dirname(__file__))
-    version_file = os.path.normpath(
-        os.path.join(parent_dir, relative_path))
-    ver = "0.0.0"
-    if os.path.isfile(version_file):
-        flags = os.O_RDONLY
-        modes = stat.S_IWUSR | stat.S_IRUSR
-        with os.fdopen(os.open(version_file, flags, modes),
-                       "rb") as ver_file:
-            content_list = ver_file.read().decode("utf-8").split("\n")
-            for line in content_list:
-                if line.strip() and "-v" in line:
-                    ver = line.strip().split('-')[1]
-                    ver = ver.split(':')[0][1:]
-                    break
-    return ver
