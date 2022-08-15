@@ -47,6 +47,7 @@ RETRY_ATTEMPTS = 0
 HDC = "litehdc.exe"
 DEFAULT_BAUD_RATE = 115200
 
+
 def get_hdc_path():
     from xdevice import Variables
     user_path = os.path.join(Variables.exec_dir, "resource/tools")

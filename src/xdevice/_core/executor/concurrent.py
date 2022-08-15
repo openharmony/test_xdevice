@@ -271,13 +271,14 @@ class DriversThread(threading.Thread):
                     failed_list.append(i + "#" + i)
             else:
                 failed_list = params[ReportConst.unsuccessful_params].get(module_name, [])
-        except:
+        except Exception:
             failed_list = params[ReportConst.unsuccessful_params].get(module_name, [])
-        if not failed_list:
-            failed_list = params[ReportConst.unsuccessful_params].get(str(module_name).split(".")[0], [])
-        unpassed_test_params.extend(failed_list)
-        LOG.debug("Get unpassed test params %s", unpassed_test_params)
-        return unpassed_test_params
+        finally:
+            if not failed_list:
+                failed_list = params[ReportConst.unsuccessful_params].get(str(module_name).split(".")[0], [])
+            unpassed_test_params.extend(failed_list)
+            LOG.debug("Get unpassed test params %s", unpassed_test_params)
+            return unpassed_test_params
 
     @classmethod
     def _append_unpassed_test_param(cls, history_report_file,
