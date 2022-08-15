@@ -77,6 +77,7 @@ from _core.testkit.kit import remount
 from _core.testkit.kit import disable_keyguard
 from _core.testkit.kit import unlock_screen
 from _core.testkit.kit import unlock_device
+from _core.testkit.kit import get_class
 from _core.driver.parser_lite import ShellHandler
 from _core.report.encrypt import check_pub_key_exist
 from _core.utils import get_file_absolute_path
@@ -195,6 +196,7 @@ __all__ = [
     "disable_keyguard",
     "unlock_screen",
     "unlock_device",
+    "get_class",
     "ShellHandler",
     "ResultCode",
     "check_pub_key_exist",

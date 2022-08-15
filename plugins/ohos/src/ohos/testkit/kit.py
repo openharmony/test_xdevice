@@ -41,6 +41,7 @@ from xdevice import modify_props
 from xdevice import get_app_name_by_tool
 from xdevice import remount
 from xdevice import disable_keyguard
+from xdevice import get_class
 
 from ohos.constants import CKit
 from ohos.environment.dmlib import CollectingOutputReceiver
@@ -953,7 +954,7 @@ def junit_dex_para_parse(device, junit_paras, prefix_char="--"):
             ret_str.append(prefix_char + " ".join(['notTestFile',
                                                    exclude_file]))
         elif para_name.strip() == "test" or para_name.strip() == "class":
-            result = _get_class(junit_paras, prefix_char, para_name.strip())
+            result = get_class(junit_paras, prefix_char, para_name.strip())
             ret_str.append(result)
         elif para_name.strip() == "include-annotation":
             ret_str.append(prefix_char + " ".join(
@@ -966,40 +967,6 @@ def junit_dex_para_parse(device, junit_paras, prefix_char="--"):
                 [para_name, ",".join(junit_paras[para_name])]))
 
     return " ".join(ret_str)
-
-
-
-
-
-
-
-
-def _get_class(junit_paras, prefix_char, para_name):
-    if not junit_paras.get(para_name):
-        return ""
-
-    result = ""
-    if prefix_char == "-e":
-        result = " %s class " % prefix_char
-    elif prefix_char == "--":
-        result = " %sclass " % prefix_char
-    elif prefix_char == "-s":
-        result = " %s class " % prefix_char
-    test_items = []
-    for test in junit_paras.get(para_name):
-        test_item = test.split("#")
-        if len(test_item) == 1 or len(test_item) == 2:
-            test_item = "%s" % test
-            test_items.append(test_item)
-        elif len(test_item) == 3:
-            test_item = "%s#%s" % (test_item[1], test_item[2])
-            test_items.append(test_item)
-        else:
-            raise ParamError("The parameter %s %s is error" % (
-                             prefix_char, para_name))
-    if not result:
-        LOG.debug("There is unsolved prefix char: %s ." % prefix_char)
-    return result + ",".join(test_items)
 
 
 def get_app_name(hap_app):

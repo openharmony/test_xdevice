@@ -218,8 +218,7 @@ class Device(IDevice):
         stdout = self.execute_shell_command(command, timeout=5 * 1000,
                                             output_flag=False,
                                             retry=retry,
-                                            abort_on_exception=
-                                            abort_on_exception).strip()
+                                            abort_on_exception=abort_on_exception).strip()
         if stdout:
             LOG.debug(stdout)
         return stdout
@@ -726,9 +725,9 @@ class Device(IDevice):
             except Exception as _:
                 time.sleep(3)
                 self._proxy.init(port=self._h_port, addr=self.host, device=self)
-
-            if self._uitestdeamon is not None:
-                self._uitestdeamon.init(self)
+            finally:
+                if self._uitestdeamon is not None:
+                    self._uitestdeamon.init(self)
 
         if self._proxy:
             return self._proxy
@@ -781,6 +780,7 @@ class Device(IDevice):
         @summary: 截取手机屏幕图片并保存
         @param  name: 保存的图片名称,通过getTakePicturePath方法获取保存全路径
         '''
+        path = ""
         try:
             temp_path = os.path.join(self._device_log_path, "temp")
             path = os.path.join(temp_path, name)
@@ -789,7 +789,6 @@ class Device(IDevice):
             self.pull_file("/data/screen.png", path)
         except Exception as error:
             self.log.error("devicetest take_picture: {}".format(str(error)))
-
         return path
 
     def set_device_report_path(self, path):

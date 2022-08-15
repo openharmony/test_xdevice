@@ -271,7 +271,7 @@ class DriversThread(threading.Thread):
                     failed_list.append(i + "#" + i)
             else:
                 failed_list = params[ReportConst.unsuccessful_params].get(module_name, [])
-        except:
+        except Exception:
             failed_list = params[ReportConst.unsuccessful_params].get(module_name, [])
         if not failed_list:
             failed_list = params[ReportConst.unsuccessful_params].get(str(module_name).split(".")[0], [])
