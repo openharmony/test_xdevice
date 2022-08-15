@@ -144,12 +144,7 @@ class Scheduler(object):
             self.test_number = len(task.test_drivers)
 
             if task.config.exectype == TestExecType.device_test:
-                if not hasattr(task.config, "dry_run") or \
-                        not task.config.dry_run or \
-                        (task.config.dry_run and task.config.retry):
-                    self._device_test_execute(task)
-                else:
-                    self._dry_run_device_test_execute(task)
+                self._device_test_execute(task)
             elif task.config.exectype == TestExecType.host_test:
                 self._host_test_execute(task)
             else:

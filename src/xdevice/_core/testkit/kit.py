@@ -39,7 +39,7 @@ TARGET_SDK_VERSION = 22
 
 __all__ = ["get_app_name_by_tool", "junit_para_parse", "gtest_para_parse",
            "get_install_args", "reset_junit_para", "remount", "disable_keyguard",
-           "timeout_callback", "unlock_screen", "unlock_device"]
+           "timeout_callback", "unlock_screen", "unlock_device", "get_class"]
 
 
 def remount(device):
@@ -55,7 +55,7 @@ def remount(device):
     device.execute_shell_command("mount -o rw,remount /%s" % "system")
 
 
-def _get_class(junit_paras, prefix_char, para_name):
+def get_class(junit_paras, prefix_char, para_name):
     if not junit_paras.get(para_name):
         return ""
 
@@ -122,7 +122,7 @@ def junit_para_parse(device, junit_paras, prefix_char="-e"):
             ret_str.append(" ".join([prefix_char, 'notTestFile',
                                      exclude_file]))
         elif para_name.strip() == "test" or para_name.strip() == "class":
-            result = _get_class(junit_paras, prefix_char, para_name.strip())
+            result = get_class(junit_paras, prefix_char, para_name.strip())
             ret_str.append(result)
         elif para_name.strip() == "include-annotation":
             ret_str.append(" ".join([prefix_char, "annotation",
