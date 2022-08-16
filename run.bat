@@ -37,6 +37,12 @@ python -c "import pip"
     goto:eof
 )
 
+python -c "import easy_install"
+@if errorlevel 1 (
+    @echo "Please install setuptools first!"
+    goto:eof
+)
+
 if not exist %TOOLS% (
     @echo "no %TOOLS% directory exist"
 	goto:eof
@@ -47,7 +53,7 @@ python -m pip uninstall -y xdevice-extension
 python -m pip uninstall -y xdevice-ohos
 
 for %%a in (%TOOLS%/*.egg) do (
-    python -m pip install --user %TOOLS%/%%a
+    python -m easy_install --user %TOOLS%/%%a
     @if errorlevel 1 (
       @echo "Error occurs to install %%a!"
     )
