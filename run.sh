@@ -33,6 +33,7 @@ $PYTHON -c 'import sys; exit(1) if sys.version_info.major < 3 or sys.version_inf
 error "Python3.7 or higher version required!"
 cd $(dirname "$0") || error "Failure to change direcory!"
 $PYTHON -c "import pip" || error "Please install pip first!"
+$PYTHON -c "import easy_install" || error "Please install setuptools first!"
 
 if [ ! -d $TOOLS ]; then
   error "$TOOLS directory not exists"
@@ -47,7 +48,7 @@ do
   if [ ! -e "$f" ]; then
     error "Can not find xdevice package!"
   fi
-  $PYTHON -m pip install --user "$f" || echo "Error occurs to install $f!"
+  $PYTHON -m easy_install --user "$f" || echo "Error occurs to install $f!"
 done
 
 for f in "$TOOLS"/*.tar.gz
