@@ -390,7 +390,10 @@ class Device(IDevice):
     def _start_catch_device_log(self):
         if self.hilog_file_pipe:
             command = "hilog"
-            cmd = ['hdc_std', "-t", self.device_sn, "shell", command]
+            if self.host != "127.0.0.1":
+                cmd = ["hdc_std", "-s", "{}:{}".format(self.host, self.port), "shell", command]
+            else:
+                cmd = ['hdc_std', "-t", self.device_sn, "shell", command]
             LOG.info("execute command: %s" % " ".join(cmd).replace(
                 self.device_sn, convert_serial(self.device_sn)))
             self.device_hilog_proc = start_standing_subprocess(
