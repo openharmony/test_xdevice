@@ -120,6 +120,8 @@ class EnvironmentManager(object):
                     manager_instance
             except Exception as error:
                 LOG.debug("Env start error: %s" % error)
+        if len(self.managers):
+            self.managers = dict(sorted(self.managers.items(), reverse=True))
 
     def env_stop(self):
         for manager in self.managers.values():
