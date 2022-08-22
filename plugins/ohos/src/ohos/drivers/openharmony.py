@@ -381,9 +381,8 @@ class OHJSUnitTestDriver(IDriver):
             self._run_with_rerun(listener, test_to_run)
 
     def _collect_test_to_run(self):
-        if self.rerun:
-            run_results = self.runner.dry_run()
-            return run_results
+        run_results = self.runner.dry_run()
+        return run_results
 
     def _run_tests(self, listener):
         test_tracker = CollectingPassListener()
