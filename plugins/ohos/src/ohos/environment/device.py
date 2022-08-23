@@ -315,6 +315,8 @@ class Device(IDevice):
         The top directory won't be created if is_create is False (by default)
         and vice versa
         """
+        local = "\"{}\"".format(local)
+        remote = "\"{}\"".format(remote)
         if local is None:
             raise HdcError("XDevice Local path cannot be None!")
 
@@ -343,6 +345,8 @@ class Device(IDevice):
         The top directory won't be created if is_create is False (by default)
         and vice versa
         """
+        local = "\"{}\"".format(local)
+        remote = "\"{}\"".format(remote)
         if self.host != "127.0.0.1":
             self.connector_command("file recv {} {}".format(remote, local))
         else:
