@@ -381,7 +381,8 @@ class EncryptFileHandler(RotatingFileHandler):
 
         # baseFilename is the attribute in FileHandler
         base_file_name = getattr(self, "baseFilename", None)
-        return open(base_file_name, self.mode)
+        with open(base_file_name, self.mode) as handler:
+            return handler
 
     def emit(self, record):
         try:
