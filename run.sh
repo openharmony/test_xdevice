@@ -22,7 +22,7 @@ error()
   exit 1
 }
 PYTHON="python3"
-TOOLS="tools"
+TOOLS_DIR="tools"
 
 flag=$(command -v $PYTHON | grep -c $PYTHON)
 if [ "$flag" -eq 0 ]; then
@@ -35,15 +35,15 @@ cd $(dirname "$0") || error "Failure to change direcory!"
 $PYTHON -c "import pip" || error "Please install pip first!"
 $PYTHON -c "import easy_install" || error "Please install setuptools first!"
 
-if [ ! -d $TOOLS ]; then
-  error "$TOOLS directory not exists"
+if [ ! -d $TOOLS_DIR ]; then
+  error "$TOOLS_DIR directory not exists"
 fi
 
 $PYTHON -m pip uninstall -y xdevice
 $PYTHON -m pip uninstall -y xdevice-extension
 $PYTHON -m pip uninstall -y xdevice-ohos
 
-for f in "$TOOLS"/*.egg
+for f in "$TOOLS_DIR"/*.egg
 do
   if [ ! -e "$f" ]; then
     error "Can not find xdevice package!"
@@ -51,7 +51,7 @@ do
   $PYTHON -m easy_install --user "$f" || echo "Error occurs to install $f!"
 done
 
-for f in "$TOOLS"/*.tar.gz
+for f in "$TOOLS_DIR"/*.tar.gz
 do
   if [ ! -e "$f" ]; then
     error "Can not find xdevice package!"
