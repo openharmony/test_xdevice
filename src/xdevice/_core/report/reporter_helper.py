@@ -553,20 +553,21 @@ class VisionHelper:
             LOG.error("Template file not exists")
             return ""
 
-        file_context = open(self.template_name).read()
-        file_context = self._render_key("", ReportConstant.title_name,
-                                        title_name, file_context)
-        file_context = self._render_exec_info(file_context, exec_info)
-        file_context = self._render_summary(file_context, summary)
-        if render_target == ReportConstant.summary_vision_report:
-            file_context = self._render_suites(file_context, suites)
-        elif render_target == ReportConstant.details_vision_report:
-            file_context = self._render_cases(file_context, suites)
-        elif render_target == ReportConstant.failures_vision_report:
-            file_context = self._render_failure_cases(file_context, suites)
-        else:
-            LOG.error("Unsupported vision report type: %s", render_target)
-        return file_context
+        with open(self.template_name) as file:
+            file_context = file.read()
+            file_context = self._render_key("", ReportConstant.title_name,
+                                            title_name, file_context)
+            file_context = self._render_exec_info(file_context, exec_info)
+            file_context = self._render_summary(file_context, summary)
+            if render_target == ReportConstant.summary_vision_report:
+                file_context = self._render_suites(file_context, suites)
+            elif render_target == ReportConstant.details_vision_report:
+                file_context = self._render_cases(file_context, suites)
+            elif render_target == ReportConstant.failures_vision_report:
+                file_context = self._render_failure_cases(file_context, suites)
+            else:
+                LOG.error("Unsupported vision report type: %s", render_target)
+            return file_context
 
     @classmethod
     def _render_key(cls, prefix, key, new_str, update_context):

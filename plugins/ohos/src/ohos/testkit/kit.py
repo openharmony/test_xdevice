@@ -249,16 +249,17 @@ class PushKit(ITestKit):
                 device.connector_command("shell mkdir {}".format(dst))
                 for root, _, files in os.walk(real_src_path):
                     for file in files:
-                        device.connector_command(
-                            "file send \"{}\" \"{}\"".format(os.path.join(root, file),
-                                                     dst))
+                        device.push_file("{}".format(os.path.join(root, file)),
+                                         "{}".format(dst))
                         LOG.debug(
                             "Push file finished from {} to {}".format(
                                 os.path.join(root, file), dst))
                         self.pushed_file.append(os.path.join(dst, file))
             else:
-                device.connector_command("file send \"{}\" \"{}\"".format(real_src_path,
-                                                            dst))
+                if device.is_directory(dst):
+                    dst = os.path.join(dst, os.path.basename(real_src_path))
+                device.push_file("{}".format(real_src_path),
+                                 "{}".format(dst))
                 LOG.debug("Push file finished from {} to {}".format(src, dst))
                 self.pushed_file.append(dst)
         for command in self.post_push:
