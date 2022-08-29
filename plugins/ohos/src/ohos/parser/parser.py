@@ -1242,6 +1242,9 @@ class OHJSUnitTestParser(IParser):
             pos  = self.runner.suite_recorder.get(suite.suite_name)[0]
             if len(test_des_list) == len(report_listener.result[pos][1]):
                 continue
+            interval = len(test_des_list) - len(report_listener.result[pos][1])
+            LOG.info("{} tests in {} had missed".format(
+                interval, suite.suite_name))
             for test_des in test_des_list:
                 is_contain = False
                 for case in report_listener.result[pos][1]:
@@ -1257,6 +1260,8 @@ class OHJSUnitTestParser(IParser):
                     test_result.run_time = 0
                     test_result.code = ResultCode.BLOCKED.value
                     report_listener.result[pos][1].append(test_result)
+                    LOG.debug("Add {}#{}".format(test_des.class_name,
+                                                 test_des.test_name))
 
     def _handle_lacking_whole_suite(self, report_listener):
         all_suite_set = set(self.runner.expect_tests_dict.keys())
@@ -1265,13 +1270,15 @@ class OHJSUnitTestParser(IParser):
             suite_name_set = set()
             for suite in report_listener.suites.values():
                 suite_name_set.add(suite.suite_name)
-            un_suite_set.union(all_suite_set.difference(suite_name_set))
-        for un_suite in un_suite_set:
+            un_suite_set = all_suite_set.difference(suite_name_set)
+            if un_suite_set:
+                LOG.info("{} suites had missed.".format(len(un_suite_set)))
+        for name in un_suite_set:
             test_des_list = self.runner.expect_tests_dict.get(
-                un_suite.suite_name, [])
+                name, [])
             current_suite = self.state_machine.suite(reset=True)
             current_suite.test_num = len(test_des_list)
-            current_suite.suite_name = self.current_value
+            current_suite.suite_name = name
             for listener in self.get_listeners():
                 suite = copy.copy(current_suite)
                 listener.__started__(LifeCycle.TestSuite, suite)
