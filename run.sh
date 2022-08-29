@@ -35,7 +35,7 @@ cd $(dirname "$0") || error "Failure to change direcory!"
 $PYTHON -c "import pip" || error "Please install pip first!"
 $PYTHON -c "import easy_install" || error "Please install setuptools first!"
 
-if [ ! -d $TOOLS_DIR ]; then
+if [ ! -d "$TOOLS_DIR" ]; then
   error "$TOOLS_DIR directory not exists"
 fi
 
