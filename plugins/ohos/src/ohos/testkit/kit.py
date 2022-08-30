@@ -927,7 +927,7 @@ class PermissionKit(ITestKit):
         content = device.execute_shell_command(dump_command)
         if not content or not str(content).startswith(pkg_name):
             return ""
-        content = content[len(pkg_name) + len(":\n")]
+        content = content[len(pkg_name) + len(":\n"):]
         dump_dict = json.loads(content)
         if "userInfo" not in dump_dict.keys():
             return ""
