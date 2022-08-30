@@ -257,7 +257,10 @@ class PushKit(ITestKit):
                         self.pushed_file.append(os.path.join(dst, file))
             else:
                 if device.is_directory(dst):
-                    dst = os.path.normpath(os.path.join(dst, os.path.basename(real_src_path)))
+                    dst = os.path.join(dst, os.path.basename(real_src_path))
+                    if dst.find("\\") > -1:
+                        dst_paths = dst.split("\\")
+                        dst = "/".join(dst_paths)
                 device.push_file("{}".format(real_src_path),
                                  "{}".format(dst))
                 LOG.debug("Push file finished from {} to {}".format(src, dst))
