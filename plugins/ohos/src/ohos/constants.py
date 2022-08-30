@@ -79,3 +79,4 @@ class CKit:
     deploytool = "DeployToolKit"
     query = "QueryKit"
     component = "ComponentKit"
+    permission = "PermissionKit"

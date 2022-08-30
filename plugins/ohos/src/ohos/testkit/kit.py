@@ -258,6 +258,9 @@ class PushKit(ITestKit):
             else:
                 if device.is_directory(dst):
                     dst = os.path.join(dst, os.path.basename(real_src_path))
+                    if dst.find("\\") > -1:
+                        dst_paths = dst.split("\\")
+                        dst = "/".join(dst_paths)
                 device.push_file("{}".format(real_src_path),
                                  "{}".format(dst))
                 LOG.debug("Push file finished from {} to {}".format(src, dst))
@@ -891,14 +894,55 @@ class ComponentKit(ITestKit):
         self.cache_device.clear()
 
 
+@Plugin(type=Plugin.TEST_KIT , id=CKit.permission)
+class PermissionKit(ITestKit):
+    def __init__(self):
+        self.package_name_list = None
+        self.permission_list = None
 
+    def __check_config__(self, config):
+        self.package_name_list = \
+            get_config_value('package-names', config, True, [])
+        self.permission_list = \
+            get_config_value('permissions', config, True, [])
+
+    def __setup__(self, device, **kwargs):
+        if not self.package_name_list or not self.permission_list:
+            LOG.warning("Please check parameters of permission kit in json")
+            return
+        for index in range(len(self.package_name_list)):
+            cur_name = self.package_name_list[index]
+            token_id = self._get_token_id(device, cur_name)
+            if not token_id:
+                LOG.warning("Not found accessTokenId of '{}'".format(cur_name))
+                continue
+            for permission in self.permission_list[index]:
+                command = "atm perm -g -i {} -p {}".format(token_id,
+                                                           permission)
+                device.execute_shell_command(command)
+
+    def __teardown__(self, device):
+        pass
+
+    def _get_token_id(self, device, pkg_name):
+        # shell bm dump -n
+        dump_command = "bm dump -n {}".format(pkg_name)
+        content = device.execute_shell_command(dump_command)
+        if not content or not str(content).startswith(pkg_name):
+            return ""
+        content = content[len(pkg_name) + len(":\n"):]
+        dump_dict = json.loads(content)
+        if "userInfo" not in dump_dict.keys():
+            return ""
+        user_info_dict = dump_dict["userInfo"][0]
+        if "accessTokenId" not in user_info_dict.keys():
+            return ""
+        else:
+            return user_info_dict["accessTokenId"]
 
 
 def keep_screen_on(device):
     device.execute_shell_command("svc power stayon true")
-
-
-
 
 
 def run_command(device, command):
