@@ -251,7 +251,8 @@ class OHJSUnitTestDriver(IDriver):
                                  0o755)
             self.config.device.execute_shell_command(command="hilog -r")
             with os.fdopen(hilog_open, "a") as hilog_file_pipe:
-                self.config.device.clear_crash_log()
+                if hasattr(self.config.device, "clear_crash_log"):
+                    self.config.device.clear_crash_log()
                 self.config.device.start_catch_device_log(hilog_file_pipe=hilog_file_pipe)
                 self._run_oh_jsunit(config_file, request)
         except Exception as exception:
@@ -264,7 +265,8 @@ class OHJSUnitTestDriver(IDriver):
             serial = "{}_{}".format(str(self.config.device.__get_serial__()), time.time_ns())
             log_tar_file_name = "{}_{}".format(str(serial).replace(
                 ":", "_"), request.get_module_name())
-            self.config.device.start_get_crash_log(log_tar_file_name)
+            if hasattr(self.config.device, "start_get_crash_log"):
+                self.config.device.start_get_crash_log(log_tar_file_name)
             self.config.device.stop_catch_device_log()
             self.result = check_result_report(
                 request.config.report_path, self.result, self.error_message)
@@ -305,8 +307,9 @@ class OHJSUnitTestDriver(IDriver):
             oh_jsunit_para_parse(self.runner, self.config.testargs)
 
             test_to_run = self._collect_test_to_run()
-            LOG.info("Collected test count is: %s" % (len(test_to_run)
-                                                      if test_to_run else 0))
+            LOG.info("Collected test count is: {}, test count is: {}".
+                     format(len(self.runner.expect_tests_dict.keys()),
+                            len(test_to_run) if test_to_run else 0))
         finally:
             do_module_kit_teardown(request)
 
@@ -350,7 +353,7 @@ class OHJSUnitTestDriver(IDriver):
         self.rerun = True if is_rerun == 'true' else False
 
         if not package and not module:
-            raise ParamError("Neither package nor moodle is found"
+            raise ParamError("Neither package nor module is found"
                              " in config file.", error_no="03201")
         timeout_config = get_config_value("shell-timeout",
                                           json_config.get_driver(), False)
@@ -372,8 +375,9 @@ class OHJSUnitTestDriver(IDriver):
 
     def _do_test_run(self, listener):
         test_to_run = self._collect_test_to_run()
-        LOG.info("Collected test count is: %s" % (len(test_to_run)
-                                                  if test_to_run else 0))
+        LOG.info("Collected test count is: {}, test count is: {}".
+                 format(len(self.runner.expect_tests_dict.keys()),
+                        len(test_to_run) if test_to_run else 0))
         if not test_to_run or not self.rerun:
             self.runner.run(listener)
             self.runner.notify_finished()
