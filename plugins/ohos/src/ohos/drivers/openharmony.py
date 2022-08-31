@@ -307,7 +307,7 @@ class OHJSUnitTestDriver(IDriver):
             oh_jsunit_para_parse(self.runner, self.config.testargs)
 
             test_to_run = self._collect_test_to_run()
-            LOG.info("Collected test count is: {}, test count is: {}".
+            LOG.info("Collected suite count is: {}, test count is: {}".
                      format(len(self.runner.expect_tests_dict.keys()),
                             len(test_to_run) if test_to_run else 0))
         finally:
@@ -377,7 +377,7 @@ class OHJSUnitTestDriver(IDriver):
 
     def _do_test_run(self, listener):
         test_to_run = self._collect_test_to_run()
-        LOG.info("Collected test count is: {}, test count is: {}".
+        LOG.info("Collected suite count is: {}, test count is: {}".
                  format(len(self.runner.expect_tests_dict.keys()),
                         len(test_to_run) if test_to_run else 0))
         if not test_to_run or not self.rerun:
