@@ -1151,7 +1151,8 @@ class OHJSUnitTestParser(IParser):
                 result = copy.copy(test_info)
                 result.code = ResultCode.FAILED.value
                 listener.__ended__(LifeCycle.TestCase, result)
-                if listener.__class__.__name__ == "ReportListener":
+                if listener.__class__.__name__ == "ReportListener" \
+                        and self.runner.retry_times > 1:
                     index = list(listener.tests.keys())[-1]
                     listener.tests.pop(index)
             test_info.is_completed = True
@@ -1165,7 +1166,8 @@ class OHJSUnitTestParser(IParser):
                 result = copy.copy(test_info)
                 result.code = ResultCode.FAILED.value
                 listener.__ended__(LifeCycle.TestCase, result)
-                if listener.__class__.__name__ == "ReportListener":
+                if listener.__class__.__name__ == "ReportListener" \
+                        and self.runner.retry_times > 1:
                     index = list(listener.tests.keys())[-1]
                     listener.tests.pop(index)
             test_info.is_completed = True
