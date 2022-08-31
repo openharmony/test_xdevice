@@ -1258,8 +1258,16 @@ class OHJSUnitTestParser(IParser):
                     test_result.stacktrace = "error_msg:mark blocked"
                     test_result.num_tests = 1
                     test_result.run_time = 0
+                    test_result.current = \
+                        self.state_machine.running_test_index + 1
                     test_result.code = ResultCode.BLOCKED.value
-                    report_listener.result[pos][1].append(test_result)
+                    test_result = copy.copy(test_result)
+                    for listener in self.get_listeners():
+                        listener.__started__(LifeCycle.TestCase, test_result)
+                    test_result = copy.copy(test_result)
+                    for listener in self.get_listeners():
+                        listener.__ended__(LifeCycle.TestCase, test_result)
+                    self.state_machine.running_test_index += 1
                     LOG.debug("Add {}#{}".format(test_des.class_name,
                                                  test_des.test_name))
 
@@ -1274,6 +1282,7 @@ class OHJSUnitTestParser(IParser):
             if un_suite_set:
                 LOG.info("{} suites had missed.".format(len(un_suite_set)))
         for name in un_suite_set:
+            self.state_machine.running_test_index = 0
             test_des_list = self.runner.expect_tests_dict.get(
                 name, [])
             current_suite = self.state_machine.suite(reset=True)
@@ -1298,6 +1307,7 @@ class OHJSUnitTestParser(IParser):
                 test_result = copy.copy(test_result)
                 for listener in self.get_listeners():
                     listener.__ended__(LifeCycle.TestCase, test_result)
+                self.state_machine.running_test_index += 1
             current_suite.run_time = self.test_time
             current_suite.is_completed = True
             for listener in self.get_listeners():
