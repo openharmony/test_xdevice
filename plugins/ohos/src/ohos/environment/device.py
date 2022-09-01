@@ -80,7 +80,9 @@ def perform_device_action(func):
             except ReportException as error:
                 self.log.exception("Generate report error!", exc_info=False)
                 exception = error
-            except (ConnectionResetError, ConnectionRefusedError) as error:  # pylint:disable=undefined-variable
+            except (ConnectionResetError,              # pylint:disable=undefined-variable
+                    ConnectionRefusedError,            # pylint:disable=undefined-variable
+                    ConnectionAbortedError) as error:  # pylint:disable=undefined-variable
                 self.log.error("error type: %s, error: %s" %
                                (error.__class__.__name__, error))
                 cmd = "hdc_std target boot"
