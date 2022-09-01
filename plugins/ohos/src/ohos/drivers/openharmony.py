@@ -307,7 +307,7 @@ class OHJSUnitTestDriver(IDriver):
             oh_jsunit_para_parse(self.runner, self.config.testargs)
 
             test_to_run = self._collect_test_to_run()
-            LOG.info("Collected test count is: {}, test count is: {}".
+            LOG.info("Collected suite count is: {}, test count is: {}".
                      format(len(self.runner.expect_tests_dict.keys()),
                             len(test_to_run) if test_to_run else 0))
         finally:
@@ -330,6 +330,8 @@ class OHJSUnitTestDriver(IDriver):
             do_module_kit_setup(request, self.kits)
             self.runner = OHJSUnitTestRunner(self.config)
             self.runner.suites_name = request.get_module_name()
+            if self.rerun:
+                self.runner.retry_times = self.runner.MAX_RETRY_TIMES
             # execute test case
             self._get_runner_config(json_config)
             oh_jsunit_para_parse(self.runner, self.config.testargs)
@@ -375,7 +377,7 @@ class OHJSUnitTestDriver(IDriver):
 
     def _do_test_run(self, listener):
         test_to_run = self._collect_test_to_run()
-        LOG.info("Collected test count is: {}, test count is: {}".
+        LOG.info("Collected suite count is: {}, test count is: {}".
                  format(len(self.runner.expect_tests_dict.keys()),
                         len(test_to_run) if test_to_run else 0))
         if not test_to_run or not self.rerun:
@@ -400,6 +402,7 @@ class OHJSUnitTestDriver(IDriver):
         LOG.debug("Ready to run with rerun, expect run: %s"
                   % len(expected_tests))
         test_run = self._run_tests(listener)
+        self.runner.retry_times -= 1
         LOG.debug("Run with rerun, has run: %s" % len(test_run)
                   if test_run else 0)
         if len(test_run) < len(expected_tests):
@@ -421,6 +424,7 @@ class OHJSUnitTestDriver(IDriver):
         self.runner.add_arg("class", ",".join(tests))
         LOG.debug("Ready to rerun twice, expect run: %s" % len(expected_tests))
         test_run = self._run_tests(listener)
+        self.runner.retry_times -= 1
         LOG.debug("Rerun twice, has run: %s" % len(test_run))
         if len(test_run) < len(expected_tests):
             expected_tests = TestDescription.remove_test(expected_tests,
@@ -449,6 +453,8 @@ class OHJSUnitTestDriver(IDriver):
 
 
 class OHJSUnitTestRunner:
+    MAX_RETRY_TIMES = 3
+
     def __init__(self, config):
         self.arg_list = {}
         self.suites_name = None
@@ -458,6 +464,7 @@ class OHJSUnitTestRunner:
         self.finished = False
         self.expect_tests_dict = dict()
         self.finished_observer = None
+        self.retry_times = 1
 
     def dry_run(self):
         parsers = get_plugin(Plugin.PARSER, CommonParserType.oh_jsunit_list)
@@ -483,6 +490,7 @@ class OHJSUnitTestRunner:
     def notify_finished(self):
         if self.finished_observer:
             self.finished_observer.notify_task_finished()
+        self.retry_times -= 1
 
     def _get_shell_handler(self, listener):
         parsers = get_plugin(Plugin.PARSER, CommonParserType.oh_jsunit)
