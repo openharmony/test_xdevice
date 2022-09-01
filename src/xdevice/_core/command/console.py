@@ -387,14 +387,15 @@ class Console(object):
             LOG.info("Input command: {}".format(args))
             para_list = args.split()
             argument = self.argument_parser(para_list)
-            if argument.options is None or not argument.valid_param:
+            options = argument.options
+            if options is None or not argument.valid_param:
                 LOG.warning("Options is None.")
                 return None
-            if argument.options.action == ToolCommandType.toolcmd_key_run and \
-                    argument.options.retry:
-                argument.options = self._get_retry_options(argument.options, argument.parser)
-                if argument.options.dry_run:
-                    history_report_path = getattr(argument.options,
+            if options.action == ToolCommandType.toolcmd_key_run and \
+                    options.retry:
+                options = self._get_retry_options(options, argument.parser)
+                if options.dry_run:
+                    history_report_path = getattr(options,
                                                   "history_report_path", "")
                     self._list_retry_case(history_report_path)
                     return
@@ -403,12 +404,12 @@ class Console(object):
                 SuiteReporter.clear_failed_case_list()
                 SuiteReporter.clear_report_result()
 
-            command = argument.options.action
+            command = options.action
             if command == "":
                 LOG.info("Command is empty.")
                 return
 
-            self._process_command(command, argument.options, para_list, argument.parser)
+            self._process_command(command, options, para_list, argument.parser)
         except (ParamError, ValueError, TypeError, SyntaxError,
                 AttributeError) as exception:
             error_no = getattr(exception, "error_no", "00000")
@@ -464,7 +465,8 @@ class Console(object):
         # modify history_command -rp param and -sn param
         for option_tuple in self._get_to_be_replaced_option(parser):
             history_command = self._replace_history_option(
-                history_command, (input_options, argument.options), option_tuple)
+                history_command, (input_options, argument.options),
+                option_tuple)
 
         # add history command to Scheduler.command_queue
         LOG.info("Retry command: %s", history_command)
