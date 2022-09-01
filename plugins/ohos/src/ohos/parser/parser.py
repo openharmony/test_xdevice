@@ -1017,7 +1017,7 @@ class OHJSUnitItemConstants(Enum):
     TEST = "test"
     NUM_TESTS = "numtests"
     STACK = "stack"
-    SUITE_COMSUMING = "suiteconsuming"
+    SUITE_CONSUMING = "suiteconsuming"
     APP_DIED = "App died"
 
 
@@ -1033,7 +1033,7 @@ class OHJSUnitTestParser(IParser):
         self.start_time = datetime.datetime.now()
         self.test_time = 0
         self.test_run_finished = False
-        self.cur_num = -1
+        self.cur_sum = -1
         self.runner = None
 
     def get_suite_name(self):
@@ -1063,15 +1063,15 @@ class OHJSUnitTestParser(IParser):
 
     def handle_sum_line(self, line):
         value = line[len(OHJSUnitPrefixes.SUM.value):].split("=", 1)[0]
-        self.cur_num = int(value)
+        self.cur_sum = int(value)
 
     def handle_status_line(self, line):
         self.parse_key(line, len(OHJSUnitPrefixes.STATUS.value))
-        if self.cur_num > 0 and \
+        if self.cur_sum > 0 and \
                 self.current_key == OHJSUnitItemConstants.CLASS.value:
             if self.current_value not in self.runner.suite_recorder.keys():
                 current_suite = self.state_machine.suite(reset=True)
-                current_suite.test_num = self.cur_num
+                current_suite.test_num = self.cur_sum
                 current_suite.suite_name = self.current_value
                 self.runner.suite_recorder.update({
                     self.current_value:
@@ -1081,7 +1081,7 @@ class OHJSUnitTestParser(IParser):
                 current_suite = self.runner.suite_recorder.get(
                     self.current_value)[1]
                 self.state_machine.current_suite = current_suite
-            self.cur_num = -1
+            self.cur_sum = -1
             self.current_key = None
             self.current_value = None
             self.state_machine.running_test_index = 0
@@ -1090,7 +1090,7 @@ class OHJSUnitTestParser(IParser):
                 listener.__started__(LifeCycle.TestSuite, suite)
 
         else:
-            if self.current_key == OHJSUnitItemConstants.SUITE_COMSUMING.value:
+            if self.current_key == OHJSUnitItemConstants.SUITE_CONSUMING.value:
                 self.test_time = int(self.current_value)
                 self.handle_suite_end()
             else:
@@ -1151,7 +1151,8 @@ class OHJSUnitTestParser(IParser):
                 result = copy.copy(test_info)
                 result.code = ResultCode.FAILED.value
                 listener.__ended__(LifeCycle.TestCase, result)
-                if listener.__class__.__name__ == "ReportListener":
+                if listener.__class__.__name__ == "ReportListener" \
+                        and self.runner.retry_times > 1:
                     index = list(listener.tests.keys())[-1]
                     listener.tests.pop(index)
             test_info.is_completed = True
@@ -1165,7 +1166,8 @@ class OHJSUnitTestParser(IParser):
                 result = copy.copy(test_info)
                 result.code = ResultCode.FAILED.value
                 listener.__ended__(LifeCycle.TestCase, result)
-                if listener.__class__.__name__ == "ReportListener":
+                if listener.__class__.__name__ == "ReportListener" \
+                        and self.runner.retry_times > 1:
                     index = list(listener.tests.keys())[-1]
                     listener.tests.pop(index)
             test_info.is_completed = True
@@ -1243,7 +1245,7 @@ class OHJSUnitTestParser(IParser):
             if len(test_des_list) == len(report_listener.result[pos][1]):
                 continue
             interval = len(test_des_list) - len(report_listener.result[pos][1])
-            LOG.info("{} tests in {} had missed".format(
+            LOG.info("{} tests in {} had missed.".format(
                 interval, suite.suite_name))
             for test_des in test_des_list:
                 is_contain = False
@@ -1258,8 +1260,16 @@ class OHJSUnitTestParser(IParser):
                     test_result.stacktrace = "error_msg:mark blocked"
                     test_result.num_tests = 1
                     test_result.run_time = 0
+                    test_result.current = \
+                        self.state_machine.running_test_index + 1
                     test_result.code = ResultCode.BLOCKED.value
-                    report_listener.result[pos][1].append(test_result)
+                    test_result = copy.copy(test_result)
+                    for listener in self.get_listeners():
+                        listener.__started__(LifeCycle.TestCase, test_result)
+                    test_result = copy.copy(test_result)
+                    for listener in self.get_listeners():
+                        listener.__ended__(LifeCycle.TestCase, test_result)
+                    self.state_machine.running_test_index += 1
                     LOG.debug("Add {}#{}".format(test_des.class_name,
                                                  test_des.test_name))
 
@@ -1274,6 +1284,7 @@ class OHJSUnitTestParser(IParser):
             if un_suite_set:
                 LOG.info("{} suites had missed.".format(len(un_suite_set)))
         for name in un_suite_set:
+            self.state_machine.running_test_index = 0
             test_des_list = self.runner.expect_tests_dict.get(
                 name, [])
             current_suite = self.state_machine.suite(reset=True)
@@ -1298,6 +1309,7 @@ class OHJSUnitTestParser(IParser):
                 test_result = copy.copy(test_result)
                 for listener in self.get_listeners():
                     listener.__ended__(LifeCycle.TestCase, test_result)
+                self.state_machine.running_test_index += 1
             current_suite.run_time = self.test_time
             current_suite.is_completed = True
             for listener in self.get_listeners():
