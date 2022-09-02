@@ -79,9 +79,6 @@ class ResultReporter(IReporter):
             # copy reports to reports/latest folder
             self._copy_report()
 
-            # compress report folder
-            self._compress_report_folder()
-
         LOG.info("")
         LOG.info("**************************************************")
         LOG.info("************** Ended generate reports ************")
