@@ -433,7 +433,7 @@ class DriversThread(threading.Thread):
             from _core.report.result_reporter import ResultReporter
             params = ResultReporter.get_task_info_params(history_report_path)
             if params:
-                report_data_dict = dict(params[ReportConst.report_path])
+                report_data_dict = dict(params[ReportConst.data_reports])
                 if execute_result_name in report_data_dict.keys():
                     return report_data_dict.get(execute_result_name)
                 elif execute_result_name.split(".")[0] in \

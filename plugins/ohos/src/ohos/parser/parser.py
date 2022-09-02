@@ -1245,8 +1245,14 @@ class OHJSUnitTestParser(IParser):
             if len(test_des_list) == len(report_listener.result[pos][1]):
                 continue
             interval = len(test_des_list) - len(report_listener.result[pos][1])
-            LOG.info("{} tests in {} had missed.".format(
-                interval, suite.suite_name))
+            if len(test_des_list) > 0:
+                LOG.info("{} tests in {} had missed.".format(
+                    interval, suite.suite_name))
+            else:
+                LOG.info("The count of tests in '{}' is incorrect! {} test "
+                         "form dry run and {} tests have run."
+                         "".format(suite.suite_name, len(test_des_list),
+                                   len(report_listener.result[pos][1])))
             for test_des in test_des_list:
                 is_contain = False
                 for case in report_listener.result[pos][1]:
@@ -1282,7 +1288,7 @@ class OHJSUnitTestParser(IParser):
                 suite_name_set.add(suite.suite_name)
             un_suite_set = all_suite_set.difference(suite_name_set)
             if un_suite_set:
-                LOG.info("{} suites had missed.".format(len(un_suite_set)))
+                LOG.info("{} suites have missed.".format(len(un_suite_set)))
         for name in un_suite_set:
             self.state_machine.running_test_index = 0
             test_des_list = self.runner.expect_tests_dict.get(

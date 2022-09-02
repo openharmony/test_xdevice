@@ -2278,8 +2278,8 @@ class JSUnitTestDriver(IDriver):
         tests_dict = dict()
         test_count = 0
         if suite_info:
-            LOG.debug("Suites info: %s" % suite_info)
             json_str = "".join(suite_info)
+            LOG.debug("Suites info: %s" % json_str)
             try:
                 suite_dict_list = json.loads(json_str).get("suites", [])
                 for suite_dict in suite_dict_list:
