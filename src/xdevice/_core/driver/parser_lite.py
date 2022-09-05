@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import types
 
 from queue import Queue
 from _core.interface import IParser
@@ -31,6 +32,7 @@ class ShellHandler:
         self.parsers = []
         self.unfinished_line = ""
         self.output_queue = Queue()
+        self.process_output_methods = []
         for parser in parsers:
             if isinstance(parser, IParser):
                 self.parsers.append(parser)
@@ -40,19 +42,29 @@ class ShellHandler:
                         parser, ))
 
     def _process_output(self, output, end_mark="\n"):
-        content = output
-        if self.unfinished_line:
-            content = "".join((self.unfinished_line, content))
-            self.unfinished_line = ""
-        lines = content.split(end_mark)
-        if content.endswith(end_mark):
-            # get rid of the tail element of this list contains empty str
-            return lines[:-1]
+        if self.process_output_methods:
+            method = self.process_output_methods[0]
+            if callable(method):
+                return method(self, output, end_mark)
         else:
-            self.unfinished_line = lines[-1]
-            # not return the tail element of this list contains unfinished str,
-            # so we set position -1
-            return lines
+            content = output
+            if self.unfinished_line:
+                content = "".join((self.unfinished_line, content))
+                self.unfinished_line = ""
+            lines = content.split(end_mark)
+            if content.endswith(end_mark):
+                # get rid of the tail element of this list contains empty str
+                return lines[:-1]
+            else:
+                self.unfinished_line = lines[-1]
+                # not return the tail element of this list contains unfinished str,
+                # so we set position -1
+                return lines[:-1]
+
+    def add_process_method(self, func):
+        if not isinstance(func, types.FunctionType):
+            self.process_output_methods.clear()
+            self.process_output_methods.append(func)
 
     def __read__(self, output):
         lines = self._process_output(output)
