@@ -234,7 +234,7 @@ class CppTestDriver(IDriver):
         timeout_config = get_config_value('timeout',
                                               json_config.get_driver(), False)
         if timeout_config:
-            self.config.timeout = int(timeout_config)
+            self.config.timeout = int(timeout_config) // 1000
         else:
             self.config.timeout = 900
 
@@ -655,11 +655,12 @@ class CTestDriver(IDriver):
                     LOG.debug("Run ctest third party")
                     self._run_ctest_third_party(source=source, request=request,
                                                 time_out=int(
-                                                    kit_instance.time_out))
+                                                    kit_instance.timeout))
                     break
                 else:
                     LOG.debug("Run ctest")
-                    self._run_ctest(source=source, request=request)
+                    self._run_ctest(source=source, request=request,
+                                    timeout=int(kit_instance.timeout))
                     break
 
         except (LiteDeviceExecuteCommandError, Exception) as exception:
@@ -674,7 +675,7 @@ class CTestDriver(IDriver):
                 request.config.report_path, self.result, self.error_message,
                 report_name)
 
-    def _run_ctest(self, source=None, request=None):
+    def _run_ctest(self, source=None, request=None, timeout=90):
         parser_instances = []
         parsers = get_plugin(Plugin.PARSER, ParserType.ctest_lite)
         try:
@@ -701,7 +702,7 @@ class CTestDriver(IDriver):
             result, _, error = self.config.device.device. \
                 execute_command_with_timeout(
                     command=reset_cmd, case_type=DeviceTestType.ctest_lite,
-                    key=ComType.deploy_com, timeout=90, receiver=handler)
+                    key=ComType.deploy_com, timeout=timeout, receiver=handler)
             device_log_file = get_device_log_file(request.config.report_path,
                                                   request.config.device.
                                                   __get_serial__())
@@ -716,7 +717,7 @@ class CTestDriver(IDriver):
             self.config.device.device.com_dict.get(
                 ComType.deploy_com).close()
 
-    def _run_ctest_third_party(self, source=None, request=None, time_out=5):
+    def _run_ctest_third_party(self, source=None, request=None, timeout=5):
         parser_instances = []
         parsers = get_plugin(Plugin.PARSER, ParserType.ctest_lite)
         try:
@@ -761,7 +762,7 @@ class CTestDriver(IDriver):
             result, _, error = self.config.device.device. \
                 execute_command_with_timeout(
                 command=[], case_type=DeviceTestType.ctest_lite,
-                key=ComType.deploy_com, timeout=time_out, receiver=handler)
+                key=ComType.deploy_com, timeout=timeout, receiver=handler)
             device_log_file = get_device_log_file(request.config.report_path,
                                                   request.config.device.
                                                   __get_serial__())

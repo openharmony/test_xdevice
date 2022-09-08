@@ -2674,6 +2674,7 @@ class LTPPosixTestDriver(IDriver):
                         parser_instance.listeners = listeners
                         parser_instances.append(parser_instance)
                     self.handler = ShellHandler(parser_instances)
+                    self.handler.add_process_method(_ltp_output_method)
                     result_message = self.config.device.connector_command(
                         "shell {}".format(test_bin))
                     LOG.info("get result from command {}".
@@ -2694,3 +2695,19 @@ def _lock_screen(device):
 def _sleep_according_to_result(result):
     if result:
         time.sleep(1)
+
+
+def _ltp_output_method(handler, output, end_mark="\n"):
+    content = output
+    if handler.unfinished_line:
+        content = "".join((handler.unfinished_line, content))
+        handler.unfinished_line = ""
+    lines = content.split(end_mark)
+    if content.endswith(end_mark):
+        # get rid of the tail element of this list contains empty str
+        return lines[:-1]
+    else:
+        handler.unfinished_line = lines[-1]
+        # not return the tail element of this list contains unfinished str,
+        # so we set position -1
+        return lines
