@@ -1269,13 +1269,7 @@ class OHJSUnitTestParser(IParser):
                     test_result.current = \
                         self.state_machine.running_test_index + 1
                     test_result.code = ResultCode.BLOCKED.value
-                    test_result = copy.copy(test_result)
-                    for listener in self.get_listeners():
-                        listener.__started__(LifeCycle.TestCase, test_result)
-                    test_result = copy.copy(test_result)
-                    for listener in self.get_listeners():
-                        listener.__ended__(LifeCycle.TestCase, test_result)
-                    self.state_machine.running_test_index += 1
+                    report_listener.result[pos][1].append(test_result)
                     LOG.debug("Add {}#{}".format(test_des.class_name,
                                                  test_des.test_name))
 

@@ -65,7 +65,7 @@ class DeployKit(ITestKit):
 
     def __check_config__(self, config):
         self.timeout = str(int(get_config_value(
-            'timeout', config, is_list=False, default=0)) * 1000)
+            'timeout', config, is_list=False, default=0)) // 1000)
         self.burn_file = get_config_value('burn_file', config, is_list=False)
         burn_command = get_config_value('burn_command', config, is_list=False,
                                         default=RESET_CMD)
@@ -701,7 +701,7 @@ class DeployToolKit(ITestKit):
         self.config = None
         self.auto_deploy = None
         self.device_label = None
-        self.time_out = None
+        self.timeout = None
 
     def __check_config__(self, config):
         self.config = config
@@ -709,7 +709,7 @@ class DeployToolKit(ITestKit):
                                             config, is_list=False)
         self.device_label = get_config_value("device_label", config,
                                              is_list=False)
-        self.time_out = get_config_value("time_out", config,
+        self.timeout = get_config_value("time_out", config,
                                          is_list=False)
 
         if not self.auto_deploy or not self.device_label or not self.time_out:
