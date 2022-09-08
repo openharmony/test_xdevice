@@ -794,8 +794,8 @@ class Device(IDevice):
             temp_path = os.path.join(self._device_log_path, "temp")
             path = os.path.join(temp_path, name)
             self.execute_shell_command(
-                "snapshot_display -f /data/screen.png")
-            self.pull_file("/data/screen.png", path)
+                "snapshot_display -f /data/local/tmp/screen.png")
+            self.pull_file("/data/local/tmp/screen.png", path)
         except Exception as error:
             self.log.error("devicetest take_picture: {}".format(str(error)))
         return path

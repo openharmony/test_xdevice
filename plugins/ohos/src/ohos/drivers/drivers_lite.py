@@ -234,7 +234,7 @@ class CppTestDriver(IDriver):
         timeout_config = get_config_value('timeout',
                                               json_config.get_driver(), False)
         if timeout_config:
-            self.config.timeout = int(timeout_config // 1000)
+            self.config.timeout = int(timeout_config) // 1000
         else:
             self.config.timeout = 900
 
