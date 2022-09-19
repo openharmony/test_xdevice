@@ -62,7 +62,7 @@ class ShellHandler:
                 return lines[:-1]
 
     def add_process_method(self, func):
-        if not isinstance(func, types.FunctionType):
+        if isinstance(func, types.FunctionType):
             self.process_output_methods.clear()
             self.process_output_methods.append(func)
 
