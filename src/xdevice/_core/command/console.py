@@ -456,7 +456,7 @@ class Console(object):
             split_list = list(history_command.split())
             if "--repeat" in split_list:
                 pos = split_list.index("--repeat")
-                split_list = split_list[:pos] + split_list[pos+2:]
+                split_list = split_list[:pos] + split_list[pos + 2:]
                 history_command = " ".join(split_list)
 
         argument = self.argument_parser(history_command.split())
