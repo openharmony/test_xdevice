@@ -80,10 +80,10 @@ class DeviceStateMonitor(object):
 
     def wait_for_boot_complete(self, wait_time):
         counter = 1
-        start_time = int(time.time()*1000)
+        start_time = int(time.time() * 1000)
         self.device.log.debug("wait for boot complete, and wait time: %s ms" %
                               wait_time)
-        while int(time.time()*1000) - start_time < wait_time:
+        while int(time.time() * 1000) - start_time < wait_time:
             try:
                 result = self.device.get_recover_result(retry=0)
                 if self.device.check_recover_result(result):
@@ -99,10 +99,10 @@ class DeviceStateMonitor(object):
     def wait_for_device_available(self, wait_time=None):
         if not wait_time:
             wait_time = self.default_available_timeout
-        start_time = int(time.time()*1000)
+        start_time = int(time.time() * 1000)
         if not self.wait_for_device_online(wait_time):
             return False
-        elapsed_time = int(time.time()*1000) - start_time
+        elapsed_time = int(time.time() * 1000) - start_time
         if not self.wait_for_boot_complete(wait_time - elapsed_time):
             return False
         return True

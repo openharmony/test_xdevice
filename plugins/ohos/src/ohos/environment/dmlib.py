@@ -382,7 +382,7 @@ class SyncService:
         Return true if the connection opened, false if hdc refuse the
         connection. This can happen device is invalid.
         """
-        LOG.debug("Open sync, timeout=%s" % int(timeout/1000))
+        LOG.debug("Open sync, timeout=%s" % int(timeout / 1000))
         self.sock = HdcHelper.socket(host=self.host, port=self.port,
                                      timeout=timeout)
         HdcHelper.set_device(self.device, self.sock)
@@ -813,7 +813,7 @@ class HdcHelper:
             with HdcHelper.socket(host=device.host, port=device.port,
                                   timeout=timeout) as sock:
                 output_flag = kwargs.get("output_flag", True)
-                timeout_msg = " with timeout %ss" % str(timeout/1000)
+                timeout_msg = " with timeout %ss" % str(timeout / 1000)
                 message = "%s execute command: hdc shell %s%s" % \
                           (convert_serial(device.device_sn), command,
                            timeout_msg)
@@ -845,7 +845,7 @@ class HdcHelper:
                 return resp
         except socket.timeout as _:
             device.log.error("%s shell %s timeout[%sS]" % (
-                convert_serial(device.device_sn), command, str(timeout/1000)))
+                convert_serial(device.device_sn), command, str(timeout / 1000)))
             raise ShellCommandUnresponsiveException()
         finally:
             if receiver:
@@ -1005,7 +1005,7 @@ class HdcHelper:
 
         if timeout is not None:
             sock.setblocking(False)
-            sock.settimeout(timeout/1000)
+            sock.settimeout(timeout / 1000)
 
         return sock
 
