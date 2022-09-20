@@ -401,8 +401,8 @@ class EncryptFileHandler(RotatingFileHandler):
             stream = getattr(self, "stream", self._open())
             stream.write(msg)
             self.flush()
-        except RecursionError as _:  # pylint:disable=undefined-variable
-            raise
+        except RecursionError as error:  # pylint:disable=undefined-variable
+            raise error
 
     def _encrypt_valid(self):
         from _core.report.encrypt import check_pub_key_exist

@@ -196,7 +196,7 @@ class ManagerDevice(IDeviceManager):
         else:
             device_dict = dict(zip(
                 self.global_device_filter,
-                list(range(1, len(self.global_device_filter)+1))))
+                list(range(1, len(self.global_device_filter) + 1))))
             for index in range(len(self.devices_list)):
                 if self.devices_list[index].device_sn not in \
                         self.global_device_filter:
