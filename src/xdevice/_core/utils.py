@@ -491,7 +491,7 @@ def convert_ip(origin_ip):
     addr = origin_ip.strip().split(".")
     if len(addr) == 4:
         return "{}.{}.{}.{}".format(
-            addr[0], '*'*len(addr[1]), '*'*len(addr[2]), addr[-1])
+            addr[0], '*' * len(addr[1]), '*' * len(addr[2]), addr[-1])
     else:
         return origin_ip
 
@@ -511,9 +511,9 @@ def convert_serial(serial):
         return "remote_{}_{}".format(convert_ip(serial.split("_")[1]),
                                      convert_port(serial.split("_")[-1]))
     else:
-        length = len(serial)//3
+        length = len(serial) // 3
         return "{}{}{}".format(
-            serial[0:length], "*"*(len(serial)-length*2), serial[-length:])
+            serial[0:length], "*" * (len(serial) - length * 2), serial[-length:])
 
 
 def get_shell_handler(request, parser_type):
